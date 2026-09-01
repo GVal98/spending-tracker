@@ -8,9 +8,35 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 // Image inputs can take noticeably longer than text-only calls.
 const REQUEST_TIMEOUT_MS = 60_000;
 
+export type LlmAttachment =
+  | { type: "image"; dataUrl: string } // base64 data URL, e.g. "data:image/jpeg;base64,..."
+  | { type: "audio"; base64Data: string; format: string }; // bare base64 + format like "ogg", "mp3"
+
 export interface OpenRouterClient {
-  /** imageDataUrl: optional base64 data URL (e.g. "data:image/jpeg;base64,..."). */
-  complete(prompt: string, imageDataUrl?: string): Promise<string>;
+  complete(prompt: string, attachment?: LlmAttachment): Promise<string>;
+}
+
+/**
+ * Normalizes an audio MIME type (possibly with codec params) to the short
+ * format name the input_audio content part expects.
+ */
+export function audioFormatFromMimeType(mimeType: string): string {
+  const bare = mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+  const known: Record<string, string> = {
+    "audio/ogg": "ogg",
+    "audio/opus": "ogg",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/wave": "wav",
+    "audio/aac": "aac",
+    "audio/mp4": "aac",
+    "audio/x-m4a": "aac",
+    "audio/flac": "flac",
+    "audio/x-flac": "flac",
+  };
+  return known[bare] ?? bare.replace(/^audio\//, "");
 }
 
 export function createOpenRouterClient(options: {
@@ -18,12 +44,9 @@ export function createOpenRouterClient(options: {
   model: string;
 }): OpenRouterClient {
   return {
-    async complete(prompt: string, imageDataUrl?: string): Promise<string> {
-      const userContent = imageDataUrl
-        ? [
-            { type: "image_url", image_url: { url: imageDataUrl } },
-            { type: "text", text: prompt },
-          ]
+    async complete(prompt: string, attachment?: LlmAttachment): Promise<string> {
+      const userContent = attachment
+        ? [attachmentContentPart(attachment), { type: "text", text: prompt }]
         : prompt;
       const response = await fetch(OPENROUTER_URL, {
         method: "POST",
@@ -57,4 +80,13 @@ export function createOpenRouterClient(options: {
       return content;
     },
   };
+}
+
+function attachmentContentPart(attachment: LlmAttachment): object {
+  return attachment.type === "image"
+    ? { type: "image_url", image_url: { url: attachment.dataUrl } }
+    : {
+        type: "input_audio",
+        input_audio: { data: attachment.base64Data, format: attachment.format },
+      };
 }

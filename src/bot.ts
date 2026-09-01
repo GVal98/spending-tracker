@@ -1,8 +1,12 @@
-import { Bot } from "grammy";
+import { Bot, type Context } from "grammy";
 import { loadConfig } from "./config.js";
-import { createOpenRouterClient } from "./llm/openrouter.js";
-import type { Context } from "grammy";
 import {
+  audioFormatFromMimeType,
+  createOpenRouterClient,
+  type LlmAttachment,
+} from "./llm/openrouter.js";
+import {
+  buildAudioExtractionPrompt,
   buildEditPrompt,
   buildExtractionPrompt,
   buildPhotoExtractionPrompt,
@@ -37,7 +41,7 @@ bot.command("start", async (ctx) => {
     "Send me a spend like “coffee with Anna 6.50” and I'll track it — " +
     "several in one message works too (“coffee 5, taxi 12”).\n" +
       `Use /list to see your last ${LIST_LIMIT} spends.\n` +
-      "You can also send a photo of a receipt (caption optional).\n" +
+      "You can also send a photo of a receipt or a voice message (caption optional).\n" +
       "Reply to a confirmation with a correction (e.g. “actually 7.50”) to edit, " +
       "or with “delete” to remove that spend.",
   );
@@ -70,9 +74,9 @@ bot.on("message:text", async (ctx) => {
 
 bot.on("message:photo", async (ctx) => {
   const caption = ctx.message.caption ?? "";
-  let imageDataUrl: string;
+  let bytes: Buffer;
   try {
-    imageDataUrl = await downloadPhotoAsDataUrl(ctx);
+    bytes = await downloadTelegramFile(ctx);
   } catch (error) {
     console.error("photo download failed:", error);
     await ctx.reply("Couldn't download that photo, please try again.");
@@ -81,10 +85,47 @@ bot.on("message:photo", async (ctx) => {
 
   await extractAndSave(ctx, {
     prompt: buildPhotoExtractionPrompt(caption),
-    imageDataUrl,
+    // Telegram serves photos (as opposed to documents) as JPEG.
+    attachment: {
+      type: "image",
+      dataUrl: `data:image/jpeg;base64,${bytes.toString("base64")}`,
+    },
     rawText: caption.trim() !== "" ? `[photo] ${caption}` : "[photo]",
     parseFailReply:
       "Couldn't read a spend from that photo. Try a clearer shot of the receipt, or add a caption like “groceries 23.40”.",
+  });
+});
+
+bot.on(["message:voice", "message:audio"], async (ctx) => {
+  const caption = ctx.message.caption ?? "";
+  const media = ctx.message.voice ?? ctx.message.audio;
+  if (!media) {
+    throw new Error("voice/audio handler fired without voice or audio payload");
+  }
+
+  let bytes: Buffer;
+  try {
+    bytes = await downloadTelegramFile(ctx);
+  } catch (error) {
+    console.error("audio download failed:", error);
+    await ctx.reply("Couldn't download that audio, please try again.");
+    return;
+  }
+
+  // Telegram voice notes are OGG/Opus; mime_type is normally set, but fall
+  // back per media kind if it's missing.
+  const mimeType =
+    media.mime_type ?? (ctx.message.voice ? "audio/ogg" : "audio/mpeg");
+  await extractAndSave(ctx, {
+    prompt: buildAudioExtractionPrompt(caption),
+    attachment: {
+      type: "audio",
+      base64Data: bytes.toString("base64"),
+      format: audioFormatFromMimeType(mimeType),
+    },
+    rawText: caption.trim() !== "" ? `[voice] ${caption}` : "[voice]",
+    parseFailReply:
+      "Couldn't hear a spend in that audio. Try saying e.g. “coffee six fifty”, or send it as text.",
   });
 });
 
@@ -97,12 +138,12 @@ async function extractAndSave(
   ctx: Context,
   input: {
     prompt: string;
-    imageDataUrl?: string;
+    attachment?: LlmAttachment;
     rawText: string;
     parseFailReply: string;
   },
 ): Promise<void> {
-  const llmResponse = await completeOrNull(input.prompt, input.imageDataUrl);
+  const llmResponse = await completeOrNull(input.prompt, input.attachment);
   if (llmResponse === null) {
     await ctx.reply("Couldn't reach the parsing service, please try again.");
     return;
@@ -130,29 +171,28 @@ async function extractAndSave(
   }
 }
 
-const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 
 /**
- * Downloads the message's photo from Telegram and returns it as a base64 data
- * URL. We deliberately re-upload bytes instead of passing Telegram's file URL
- * to OpenRouter — that URL contains the bot token.
+ * Downloads the current message's media (largest photo size / voice / audio)
+ * from Telegram. We deliberately re-upload bytes to OpenRouter instead of
+ * passing Telegram's file URL — that URL contains the bot token.
  */
-async function downloadPhotoAsDataUrl(ctx: Context): Promise<string> {
-  const file = await ctx.getFile(); // largest photo size
+async function downloadTelegramFile(ctx: Context): Promise<Buffer> {
+  const file = await ctx.getFile();
   if (!file.file_path) {
     throw new Error("Telegram returned a file without file_path");
   }
   const url = `https://api.telegram.org/file/bot${config.telegramBotToken}/${file.file_path}`;
   const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
   if (!response.ok) {
-    throw new Error(`photo download failed: ${response.status} ${response.statusText}`);
+    throw new Error(`file download failed: ${response.status} ${response.statusText}`);
   }
   const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length > MAX_PHOTO_BYTES) {
-    throw new Error(`photo too large: ${bytes.length} bytes`);
+  if (bytes.length > MAX_MEDIA_BYTES) {
+    throw new Error(`file too large: ${bytes.length} bytes`);
   }
-  // Telegram serves photos (as opposed to documents) as JPEG.
-  return `data:image/jpeg;base64,${bytes.toString("base64")}`;
+  return bytes;
 }
 
 /** Edit or delete flow: the user replied to one of our confirmation messages. */
@@ -200,10 +240,10 @@ async function handleCorrection(
 /** Expected boundary failure (network/LLM down) → null; caller replies to user. */
 async function completeOrNull(
   prompt: string,
-  imageDataUrl?: string,
+  attachment?: LlmAttachment,
 ): Promise<string | null> {
   try {
-    return await llm.complete(prompt, imageDataUrl);
+    return await llm.complete(prompt, attachment);
   } catch (error) {
     console.error("LLM request failed:", error);
     return null;

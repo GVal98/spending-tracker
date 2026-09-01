@@ -89,10 +89,20 @@ src/
   spends, each with its own tags and confirmation message. Edit-by-reply stays
   single-spend (a correction targets one spend).
 
+## Iteration 4 (done)
+
+- **Voice/audio spends**: Telegram voice notes and audio files go to the same
+  Gemini model as an `input_audio` content part (base64 + format, e.g. "ogg"
+  for voice notes) — no separate transcription step; Gemini handles speech
+  natively. Same `{"spends": [...]}` list contract and save/confirm/link flow,
+  so multiple spoken spends and per-item edit/delete work. Caption (when
+  present) takes precedence over the audio. `raw_text` records `[voice]` plus
+  the caption; media downloads share one helper with photos (10MB cap, bytes
+  re-uploaded rather than exposing the bot-token file URL).
+
 ## Later (explicitly out of MVP)
 
 - **/stats** — totals per tag for week/month
-- **Audio** — voice message → transcription → same parse pipeline
 - **Dynamic tags** — manage tags via bot commands instead of hardcode
 - **Multi-currency** — MVP assumes one implicit currency
 - **CSV export**

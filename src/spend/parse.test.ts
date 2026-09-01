@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAudioExtractionPrompt,
   buildEditPrompt,
   buildExtractionPrompt,
   buildPhotoExtractionPrompt,
@@ -187,6 +188,20 @@ describe("buildPhotoExtractionPrompt", () => {
   it("omits_the_caption_section_when_caption_is_blank", () => {
     expect(buildPhotoExtractionPrompt("")).not.toContain("User caption:");
     expect(buildPhotoExtractionPrompt("   ")).not.toContain("User caption:");
+  });
+});
+
+describe("buildAudioExtractionPrompt", () => {
+  it("includes_every_allowed_tag", () => {
+    const prompt = buildAudioExtractionPrompt("");
+    for (const tag of TAGS) {
+      expect(prompt).toContain(tag);
+    }
+  });
+
+  it("includes_the_caption_only_when_present", () => {
+    expect(buildAudioExtractionPrompt("half was for mom")).toContain("half was for mom");
+    expect(buildAudioExtractionPrompt("")).not.toContain("User caption:");
   });
 });
 

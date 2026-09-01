@@ -77,6 +77,37 @@ export function buildPhotoExtractionPrompt(caption: string): string {
 }
 
 /**
+ * Prompt for extracting spends from a voice/audio message, sent to the model
+ * together with the audio. Same {"spends": [...]} contract as text and photo.
+ */
+export function buildAudioExtractionPrompt(caption: string): string {
+  const lines = [
+    "You extract spending records from a voice message where the user describes what they spent money on.",
+    "",
+    `Allowed tags: ${TAGS.join(", ")}`,
+    "",
+    "Respond with JSON only, no prose, no code fences. Shape:",
+    '{"spends": [{"amount": <positive number>, "description": "<short description>", "tags": ["<tag>", ...]}, ...]}',
+    "",
+    "Rules:",
+    "- One entry per distinct spend mentioned (usually one; “coffee five euros and taxi twelve” is two).",
+    "- amount: the money spent on that entry, as a plain number (spoken numbers like “six fifty” → 6.5).",
+    "- description: short and human-readable, based on what was said.",
+    '- tags: 1 or more tags from the allowed list that fit that entry. Use "other" only when nothing else fits.',
+    '- If the audio does not describe a spend, respond with {"error": "not_a_spend"}.',
+  ];
+  if (caption.trim() !== "") {
+    lines.push(
+      "- The user's caption may correct or add context; it takes precedence over the audio.",
+      "",
+      "User caption:",
+      caption,
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
  * Prompt for correcting an existing spend from a reply message. The model
  * returns the full updated spend (same shape as extraction), applying only
  * the requested changes.
