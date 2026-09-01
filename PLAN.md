@@ -142,6 +142,16 @@ src/
   everything-except-fixed-costs limit (~100k idea) was discussed and
   deferred — the model supports it as just another limit entry.
 
+## Iteration 8 (done)
+
+- **Russian bot UI**: every user-facing string is now Russian — /start, /list,
+  /stats (labels «Сентябрь 2026» / «Неделя с 14 сентября», «Всего», «Нет трат
+  за этот период»), confirmations («Сохранено:» / «Обновлено:» / «Удалено:»),
+  and all error replies. Correct pluralization via `src/ruPlural.ts`
+  (трата/траты/трат, позиция/позиции/позиций). Delete-by-reply also accepts
+  «удали»/«удалить»/«убери» (English keywords kept). Code, ids, LLM prompts,
+  and console logs stay English by design.
+
 ## Later (explicitly out of MVP)
 
 - **Natural-language stats** — “how much on food in July?” → LLM picks period +

@@ -225,14 +225,14 @@ describe("buildEditPrompt", () => {
 });
 
 describe("isDeleteRequest", () => {
-  it.each(["delete", "Delete", " DELETE ", "del", "remove"])(
+  it.each(["delete", "Delete", " DELETE ", "del", "remove", "удали", "Удалить", " УБЕРИ "])(
     "recognizes_%s_as_delete",
     (text) => {
       expect(isDeleteRequest(text)).toBe(true);
     },
   );
 
-  it.each(["", "actually 7.50", "delete the tag", "removed"])(
+  it.each(["", "actually 7.50", "delete the tag", "removed", "удали тег"])(
     "does_not_treat_%s_as_delete",
     (text) => {
       expect(isDeleteRequest(text)).toBe(false);

@@ -146,7 +146,8 @@ export function buildEditPrompt(existing: SpendDraft, correctionText: string): s
   ].join("\n");
 }
 
-const DELETE_KEYWORDS = new Set(["delete", "del", "remove"]);
+// English keywords kept alongside Russian: they cost nothing and old habits work.
+const DELETE_KEYWORDS = new Set(["delete", "del", "remove", "удали", "удалить", "убери"]);
 
 /** True when a reply message asks to delete the spend instead of editing it. */
 export function isDeleteRequest(text: string): boolean {

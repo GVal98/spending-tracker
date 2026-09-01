@@ -1,3 +1,4 @@
+import { ruPlural } from "../ruPlural.js";
 import { tagLabel, type Tag } from "./tags.js";
 
 /**
@@ -27,9 +28,15 @@ export interface SpendStats {
   byTag: TagStat[];
 }
 
+// Two case forms: nominative for a month label (“Сентябрь 2026”), genitive
+// after a day number (“Неделя с 14 сентября”).
 const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+] as const;
+const MONTHS_GENITIVE = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
 ] as const;
 
 /** Known args: "" or "month" → this month; "prev"/"last" → previous month; "week" → this ISO week. */
@@ -49,7 +56,7 @@ export function resolvePeriod(arg: string, now: Date): Period | undefined {
     const daysSinceMonday = (now.getDay() + 6) % 7; // getDay(): Sunday = 0
     const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
     const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday + 7);
-    return { label: `Week of ${MONTHS[from.getMonth()]} ${from.getDate()}`, kind: "week", from, to };
+    return { label: `Неделя с ${from.getDate()} ${MONTHS_GENITIVE[from.getMonth()]}`, kind: "week", from, to };
   }
   return undefined;
 }
@@ -76,15 +83,15 @@ export function computeStats(
 
 export function formatStatsMessage(label: string, stats: SpendStats): string {
   if (stats.count === 0) {
-    return `${label}\nNo spends in this period.`;
+    return `${label}\nНет трат за этот период.`;
   }
-  const spendWord = stats.count === 1 ? "spend" : "spends";
+  const spendWord = ruPlural(stats.count, "трата", "траты", "трат");
   const tagLines = stats.byTag.map(
     (stat) => `${tagLabel(stat.tag)}: ${roundAmount(stat.total)} (${stat.count})`,
   );
   // Per-tag totals overlap (multi-tag spends count under each tag), so the
   // overall total is reported separately, never summed from the rows.
-  return [`${label}`, `Total: ${roundAmount(stats.total)} (${stats.count} ${spendWord})`, "", ...tagLines].join("\n");
+  return [`${label}`, `Всего: ${roundAmount(stats.total)} (${stats.count} ${spendWord})`, "", ...tagLines].join("\n");
 }
 
 /** Sums of REAL amounts accumulate float noise (6.5 + 2.99 + ...); round for display. */

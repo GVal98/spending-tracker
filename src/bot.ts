@@ -27,6 +27,7 @@ import {
   resolvePeriod,
   roundAmount,
 } from "./spend/stats.js";
+import { ruPlural } from "./ruPlural.js";
 import { createSpendStore, type Spend } from "./spend/store.js";
 import { tagLabel, type Tag } from "./spend/tags.js";
 
@@ -44,7 +45,7 @@ const bot = new Bot(config.telegramBotToken);
 bot.use(async (ctx, next) => {
   if (ctx.from?.id !== config.ownerTelegramUserId) {
     console.warn(`rejected message from user ${ctx.from?.id ?? "<unknown>"}`);
-    await ctx.reply("Sorry, this is a private bot.");
+    await ctx.reply("Извините, это приватный бот.");
     return;
   }
   await next();
@@ -52,20 +53,20 @@ bot.use(async (ctx, next) => {
 
 bot.command("start", async (ctx) => {
   await ctx.reply(
-    "Send me a spend like “coffee with Anna 6.50” and I'll track it — " +
-    "several in one message works too (“coffee 5, taxi 12”).\n" +
-      `Use /list to see your last ${LIST_LIMIT} spends, ` +
-      "/stats for this month's totals per tag (/stats week, /stats prev).\n" +
-      "You can also send a photo of a receipt or a voice message (caption optional).\n" +
-      "Reply to a confirmation with a correction (e.g. “actually 7.50”) to edit, " +
-      "or with “delete” to remove that spend.",
+    "Отправь мне трату, например «кофе с Аней 6.50», и я её запишу — " +
+      "можно несколько в одном сообщении («кофе 5, такси 12»).\n" +
+      `/list покажет последние ${LIST_LIMIT} трат, ` +
+      "/stats — итоги месяца по тегам (/stats week, /stats prev).\n" +
+      "Можно прислать фото чека или голосовое сообщение (подпись необязательна).\n" +
+      "Чтобы изменить трату, ответь на подтверждение поправкой (например «на самом деле 7.50»), " +
+      "чтобы удалить — ответь «удали».",
   );
 });
 
 bot.command("list", async (ctx) => {
   const spends = store.listRecent(LIST_LIMIT);
   if (spends.length === 0) {
-    await ctx.reply("No spends recorded yet.");
+    await ctx.reply("Трат пока нет.");
     return;
   }
   await ctx.reply(spends.map(formatSpend).join("\n"));
@@ -75,7 +76,7 @@ bot.command("stats", async (ctx) => {
   const period = resolvePeriod(ctx.match, new Date());
   if (!period) {
     await ctx.reply(
-      "Usage: /stats (this month), /stats week (this week), /stats prev (last month)",
+      "Использование: /stats — этот месяц, /stats week — эта неделя, /stats prev — прошлый месяц",
     );
     return;
   }
@@ -110,7 +111,7 @@ bot.on("message:text", async (ctx) => {
     prompt: buildExtractionPrompt(text),
     rawText: text,
     parseFailReply:
-      "Couldn't parse that as a spend. Try something like “groceries 23.40”.",
+      "Не смог разобрать это как трату. Напиши, например, «продукты 23.40».",
   });
 });
 
@@ -121,7 +122,7 @@ bot.on("message:photo", async (ctx) => {
     bytes = await downloadTelegramFile(ctx);
   } catch (error) {
     console.error("photo download failed:", error);
-    await ctx.reply("Couldn't download that photo, please try again.");
+    await ctx.reply("Не смог скачать фото, попробуй ещё раз.");
     return;
   }
 
@@ -134,7 +135,7 @@ bot.on("message:photo", async (ctx) => {
     },
     rawText: caption.trim() !== "" ? `[photo] ${caption}` : "[photo]",
     parseFailReply:
-      "Couldn't read a spend from that photo. Try a clearer shot of the receipt, or add a caption like “groceries 23.40”.",
+      "Не смог прочитать трату с этого фото. Попробуй более чёткий снимок чека или добавь подпись, например «продукты 23.40».",
   });
 });
 
@@ -150,7 +151,7 @@ bot.on(["message:voice", "message:audio"], async (ctx) => {
     bytes = await downloadTelegramFile(ctx);
   } catch (error) {
     console.error("audio download failed:", error);
-    await ctx.reply("Couldn't download that audio, please try again.");
+    await ctx.reply("Не смог скачать аудио, попробуй ещё раз.");
     return;
   }
 
@@ -167,7 +168,7 @@ bot.on(["message:voice", "message:audio"], async (ctx) => {
     },
     rawText: caption.trim() !== "" ? `[voice] ${caption}` : "[voice]",
     parseFailReply:
-      "Couldn't hear a spend in that audio. Try saying e.g. “coffee six fifty”, or send it as text.",
+      "Не расслышал трату в этом аудио. Скажи, например, «кофе шесть пятьдесят» или отправь текстом.",
   });
 });
 
@@ -187,7 +188,7 @@ async function extractAndSave(
 ): Promise<void> {
   const llmResponse = await completeOrNull(input.prompt, input.attachment);
   if (llmResponse === null) {
-    await ctx.reply("Couldn't reach the parsing service, please try again.");
+    await ctx.reply("Не смог связаться с сервисом разбора, попробуй ещё раз.");
     return;
   }
 
@@ -204,11 +205,12 @@ async function extractAndSave(
   );
   if (spends.length > 1) {
     const total = spends.reduce((sum, spend) => sum + spend.amount, 0);
-    await ctx.reply(`Saved ${spends.length} items, total ${roundAmount(total)}:`);
+    const itemWord = ruPlural(spends.length, "позиция", "позиции", "позиций");
+    await ctx.reply(`Сохранено ${spends.length} ${itemWord}, итого ${roundAmount(total)}:`);
   }
   // Sequential on purpose: confirmations must arrive in receipt order.
   for (const spend of spends) {
-    const confirmation = await ctx.reply(`Saved: ${formatSpend(spend)}`);
+    const confirmation = await ctx.reply(`Сохранено: ${formatSpend(spend)}`);
     store.linkMessage(spend.id, confirmation.message_id);
   }
   await replyLimitStatus(
@@ -285,7 +287,7 @@ async function handleCorrection(
   const spend = store.findByMessageId(repliedToMessageId);
   if (!spend) {
     await ctx.reply(
-      "I can only edit or delete when you reply to one of my “Saved:” or “Updated:” messages.",
+      "Изменить или удалить трату можно, только ответив на моё сообщение «Сохранено:» или «Обновлено:».",
     );
     return;
   }
@@ -293,13 +295,13 @@ async function handleCorrection(
   if (isDeleteRequest(text)) {
     store.delete(spend.id);
     console.log(`deleted spend #${spend.id}`);
-    await ctx.reply(`Deleted: ${formatSpend(spend)}`);
+    await ctx.reply(`Удалено: ${formatSpend(spend)}`);
     return;
   }
 
   const llmResponse = await completeOrNull(buildEditPrompt(spend, text));
   if (llmResponse === null) {
-    await ctx.reply("Couldn't reach the parsing service, please try again.");
+    await ctx.reply("Не смог связаться с сервисом разбора, попробуй ещё раз.");
     return;
   }
 
@@ -307,14 +309,14 @@ async function handleCorrection(
   if (!result.ok) {
     console.warn(`edit parse failed for "${text}": ${result.reason}`);
     await ctx.reply(
-      "Couldn't parse that correction. Try e.g. “actually 7.50”, “tag as travel”, or “delete”.",
+      "Не смог разобрать поправку. Напиши, например, «на самом деле 7.50», «тег путешествия» или «удали».",
     );
     return;
   }
 
   const updated = store.update(spend.id, result.spend, text);
   console.log(`updated spend #${updated.id}: ${updated.amount} ${updated.description}`);
-  const confirmation = await ctx.reply(`Updated: ${formatSpend(updated)}`);
+  const confirmation = await ctx.reply(`Обновлено: ${formatSpend(updated)}`);
   store.linkMessage(updated.id, confirmation.message_id);
   // Old + new tags: an edit that moves a spend out of a limit changes that
   // limit's usage too, so both sides get reported.

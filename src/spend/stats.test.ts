@@ -13,7 +13,7 @@ describe("resolvePeriod", () => {
   it("empty_arg_resolves_to_the_current_month", () => {
     const period = resolvePeriod("", NOW);
     expect(period).toEqual({
-      label: "September 2026",
+      label: "Сентябрь 2026",
       kind: "month",
       from: new Date(2026, 8, 1),
       to: new Date(2026, 9, 1),
@@ -27,7 +27,7 @@ describe("resolvePeriod", () => {
   it("prev_resolves_to_the_previous_month", () => {
     const period = resolvePeriod("prev", NOW);
     expect(period).toEqual({
-      label: "August 2026",
+      label: "Август 2026",
       kind: "month",
       from: new Date(2026, 7, 1),
       to: new Date(2026, 8, 1),
@@ -37,7 +37,7 @@ describe("resolvePeriod", () => {
   it("prev_in_january_wraps_to_december_of_previous_year", () => {
     const period = resolvePeriod("prev", new Date(2026, 0, 10));
     expect(period).toEqual({
-      label: "December 2025",
+      label: "Декабрь 2025",
       kind: "month",
       from: new Date(2025, 11, 1),
       to: new Date(2026, 0, 1),
@@ -48,7 +48,7 @@ describe("resolvePeriod", () => {
     // Sep 15, 2026 is a Tuesday; that week's Monday is Sep 14.
     const period = resolvePeriod("week", NOW);
     expect(period).toEqual({
-      label: "Week of September 14",
+      label: "Неделя с 14 сентября",
       kind: "week",
       from: new Date(2026, 8, 14),
       to: new Date(2026, 8, 21),
@@ -66,12 +66,12 @@ describe("resolvePeriod", () => {
     // Sep 2, 2026 is a Wednesday; its week started Monday Aug 31.
     const period = resolvePeriod("week", new Date(2026, 8, 2));
     expect(period?.from).toEqual(new Date(2026, 7, 31));
-    expect(period?.label).toBe("Week of August 31");
+    expect(period?.label).toBe("Неделя с 31 августа");
   });
 
   it("arg_is_trimmed_and_case_insensitive", () => {
-    expect(resolvePeriod("  WEEK ", NOW)?.label).toBe("Week of September 14");
-    expect(resolvePeriod("Last", NOW)?.label).toBe("August 2026");
+    expect(resolvePeriod("  WEEK ", NOW)?.label).toBe("Неделя с 14 сентября");
+    expect(resolvePeriod("Last", NOW)?.label).toBe("Август 2026");
   });
 
   it("unknown_arg_resolves_to_undefined", () => {
@@ -110,38 +110,38 @@ describe("computeStats", () => {
 
 describe("formatStatsMessage", () => {
   it("reports_an_empty_period", () => {
-    expect(formatStatsMessage("September 2026", computeStats([]))).toBe(
-      "September 2026\nNo spends in this period.",
+    expect(formatStatsMessage("Сентябрь 2026", computeStats([]))).toBe(
+      "Сентябрь 2026\nНет трат за этот период.",
     );
   });
 
   it("formats_total_count_and_tag_label_lines", () => {
     const message = formatStatsMessage(
-      "September 2026",
+      "Сентябрь 2026",
       computeStats([
         { amount: 6.5, tags: ["restaurants"] },
         { amount: 12, tags: ["transport"] },
       ]),
     );
     expect(message).toBe(
-      "September 2026\nTotal: 18.5 (2 spends)\n\nТранспорт: 12 (1)\nРестораны и фастфуд: 6.5 (1)",
+      "Сентябрь 2026\nВсего: 18.5 (2 траты)\n\nТранспорт: 12 (1)\nРестораны и фастфуд: 6.5 (1)",
     );
   });
 
-  it("uses_singular_spend_for_a_single_record", () => {
-    const message = formatStatsMessage("September 2026", computeStats([{ amount: 5, tags: ["groceries"] }]));
-    expect(message).toContain("(1 spend)");
+  it("uses_the_singular_spend_word_for_a_single_record", () => {
+    const message = formatStatsMessage("Сентябрь 2026", computeStats([{ amount: 5, tags: ["groceries"] }]));
+    expect(message).toContain("(1 трата)");
   });
 
   it("rounds_float_noise_in_sums", () => {
     const message = formatStatsMessage(
-      "September 2026",
+      "Сентябрь 2026",
       computeStats([
         { amount: 0.1, tags: ["groceries"] },
         { amount: 0.2, tags: ["groceries"] },
       ]),
     );
-    expect(message).toContain("Total: 0.3");
+    expect(message).toContain("Всего: 0.3");
     expect(message).toContain("Продукты: 0.3 (2)");
   });
 });
