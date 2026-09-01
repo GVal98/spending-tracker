@@ -70,11 +70,29 @@ src/
   (`telegram_message_id PK, spend_id`), including new “Updated:” confirmations,
   so any of them works as a reply target. `created_at` is preserved on edit.
 
+## Iteration 3 (done)
+
+- **Photo spends, itemized**: send a receipt photo (caption optional) → the
+  image goes to the same Gemini model as a base64 data URL (multimodal chat
+  completion). The model returns one entry **per receipt line item**
+  (`{"spends": [...]}`, no grand-total entry); each item is saved as its own
+  spend with its own tags, inserted in one SQLite transaction (all-or-nothing —
+  one invalid entry rejects the whole response, capped at 100 items). Each item
+  gets its own confirmation message so it stays individually editable/deletable
+  by reply; multi-item saves are prefixed with an item-count + total summary
+  message. Caption is included and takes precedence over the photo. The photo
+  itself is not stored; `raw_text` records `[photo]` plus the caption for every
+  item. Bytes are re-uploaded rather than passing Telegram's file URL to
+  OpenRouter (that URL embeds the bot token); 10MB size cap.
+- **Multi-spend text messages**: text goes through the same list pipeline with
+  the same `{"spends": [...]}` contract — “coffee 5 and taxi 12” yields two
+  spends, each with its own tags and confirmation message. Edit-by-reply stays
+  single-spend (a correction targets one spend).
+
 ## Later (explicitly out of MVP)
 
 - **/stats** — totals per tag for week/month
 - **Audio** — voice message → transcription → same parse pipeline
-- **Photo** — receipt photo → vision model → same parse pipeline
 - **Dynamic tags** — manage tags via bot commands instead of hardcode
 - **Multi-currency** — MVP assumes one implicit currency
 - **CSV export**

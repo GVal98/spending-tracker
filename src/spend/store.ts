@@ -10,6 +10,8 @@ export interface Spend extends SpendDraft {
 
 export interface SpendStore {
   insert(draft: SpendDraft, rawText: string): Spend;
+  /** Inserts all drafts in one transaction — a receipt is saved fully or not at all. */
+  insertMany(drafts: SpendDraft[], rawText: string): Spend[];
   /** Full replacement of amount/description/tags; createdAt is preserved. */
   update(id: number, draft: SpendDraft, rawText: string): Spend;
   /** Removes the spend and its message links. Throws if the id is unknown. */
@@ -88,22 +90,39 @@ export function createSpendStore(dbPath: string): SpendStore {
     }
   });
 
+  const insertManyTransaction = db.transaction(
+    (drafts: SpendDraft[], rawText: string): Spend[] => {
+      const createdAt = new Date().toISOString();
+      return drafts.map((draft) => {
+        const result = insertStatement.run({
+          amount: draft.amount,
+          description: draft.description,
+          tags: JSON.stringify(draft.tags),
+          rawText,
+          createdAt,
+        });
+        return {
+          id: Number(result.lastInsertRowid),
+          ...draft,
+          rawText,
+          createdAt,
+        };
+      });
+    },
+  );
+
   return {
     insert(draft: SpendDraft, rawText: string): Spend {
-      const createdAt = new Date().toISOString();
-      const result = insertStatement.run({
-        amount: draft.amount,
-        description: draft.description,
-        tags: JSON.stringify(draft.tags),
-        rawText,
-        createdAt,
-      });
-      return {
-        id: Number(result.lastInsertRowid),
-        ...draft,
-        rawText,
-        createdAt,
-      };
+      const spends = insertManyTransaction([draft], rawText);
+      const spend = spends[0];
+      if (!spend) {
+        throw new Error("insert transaction returned no spend");
+      }
+      return spend;
+    },
+
+    insertMany(drafts: SpendDraft[], rawText: string): Spend[] {
+      return insertManyTransaction(drafts, rawText);
     },
 
     update(id: number, draft: SpendDraft, rawText: string): Spend {

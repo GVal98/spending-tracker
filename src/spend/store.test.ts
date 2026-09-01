@@ -21,6 +21,19 @@ describe("SpendStore", () => {
     expect(store.listRecent(10)).toEqual([spend]);
   });
 
+  it("insertMany_saves_all_drafts_with_shared_rawText", () => {
+    const spends = store.insertMany([COFFEE, BUS], "[photo]");
+    expect(spends).toHaveLength(2);
+    expect(spends.map((s) => s.description)).toEqual(["coffee", "bus"]);
+    expect(spends.every((s) => s.rawText === "[photo]")).toBe(true);
+    expect(store.listRecent(10)).toEqual([...spends].reverse());
+  });
+
+  it("insertMany_with_empty_array_saves_nothing", () => {
+    expect(store.insertMany([], "[photo]")).toEqual([]);
+    expect(store.listRecent(10)).toEqual([]);
+  });
+
   it("listRecent_returns_newest_first_and_respects_limit", () => {
     store.insert(COFFEE, "coffee 6.50");
     const second = store.insert(BUS, "bus 2");

@@ -11,29 +11,69 @@ export type ParseResult =
   | { ok: true; spend: SpendDraft }
   | { ok: false; reason: string };
 
+export type ParseListResult =
+  | { ok: true; spends: SpendDraft[] }
+  | { ok: false; reason: string };
+
+/** Sanity cap — a real receipt never has this many line items. */
+const MAX_ITEMS = 100;
+
 /**
  * Prompt for the LLM extraction call. The model must answer with bare JSON:
- * either a spend object or {"error": "not_a_spend"} when the message does not
- * describe a spend.
+ * a {"spends": [...]} array (one entry per spend mentioned) or
+ * {"error": "not_a_spend"} when the message does not describe a spend.
  */
 export function buildExtractionPrompt(messageText: string): string {
   return [
-    "You extract a spending record from a short user message.",
+    "You extract spending records from a short user message.",
     "",
     `Allowed tags: ${TAGS.join(", ")}`,
     "",
     "Respond with JSON only, no prose, no code fences. Shape:",
-    '{"amount": <positive number>, "description": "<short description>", "tags": ["<tag>", ...]}',
+    '{"spends": [{"amount": <positive number>, "description": "<short description>", "tags": ["<tag>", ...]}, ...]}',
     "",
     "Rules:",
-    "- amount: the money spent, as a plain number.",
+    "- One entry per distinct spend mentioned in the message (usually one; e.g. “coffee 5 and taxi 12” is two).",
+    "- amount: the money spent on that entry, as a plain number.",
     "- description: short, human-readable, taken from the message.",
-    "- tags: 1 or more tags from the allowed list that fit the spend. Use \"other\" only when nothing else fits.",
-    '- If the message does not describe a spend (no amount, or not about spending), respond with {"error": "not_a_spend"}.',
+    '- tags: 1 or more tags from the allowed list that fit that entry. Use "other" only when nothing else fits.',
+    '- If the message describes no spend at all (no amount, or not about spending), respond with {"error": "not_a_spend"}.',
     "",
     "Message:",
     messageText,
   ].join("\n");
+}
+
+/**
+ * Prompt for extracting a spend from a photo (usually a receipt), sent to the
+ * model together with the image. The caption, when present, wins over what the
+ * photo shows.
+ */
+export function buildPhotoExtractionPrompt(caption: string): string {
+  const lines = [
+    "You extract spending records from a photo — usually a receipt, sometimes a price tag or a payment screenshot.",
+    "",
+    `Allowed tags: ${TAGS.join(", ")}`,
+    "",
+    "Respond with JSON only, no prose, no code fences. Shape:",
+    '{"spends": [{"amount": <positive number>, "description": "<short description>", "tags": ["<tag>", ...]}, ...]}',
+    "",
+    "Rules:",
+    "- A receipt with multiple line items → one entry PER LINE ITEM: amount is that line's total (after its own discount), description is the item name cleaned up to be human-readable, tags fit that item.",
+    "- Do NOT add an extra entry for the receipt's grand total.",
+    "- A photo of a single spend (one item, price tag, payment screenshot) → an array with one entry.",
+    '- tags: 1 or more tags from the allowed list per entry. Use "other" only when nothing else fits.',
+    '- If the photo does not show a spend, respond with {"error": "not_a_spend"}.',
+  ];
+  if (caption.trim() !== "") {
+    lines.push(
+      "- The user's caption may correct or add context; it takes precedence over the photo.",
+      "",
+      "User caption:",
+      caption,
+    );
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -87,7 +127,7 @@ export function parseLlmResponse(raw: string): ParseResult {
     return { ok: false, reason: `model returned non-JSON: ${truncate(raw)}` };
   }
 
-  if (typeof data !== "object" || data === null) {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
     return { ok: false, reason: `model returned non-object JSON: ${truncate(raw)}` };
   }
   const record = data as Record<string, unknown>;
@@ -96,6 +136,65 @@ export function parseLlmResponse(raw: string): ParseResult {
     return { ok: false, reason: "message does not describe a spend" };
   }
 
+  return validateSpendObject(record);
+}
+
+/**
+ * Validates a multi-spend response (photo extraction): {"spends": [...]}.
+ * Also tolerates a bare array or a bare single spend object — model noise we
+ * can safely accept. All-or-nothing: one invalid entry rejects the whole
+ * response, so we never silently save a receipt partially.
+ */
+export function parseLlmResponseList(raw: string): ParseListResult {
+  let data: unknown;
+  try {
+    data = JSON.parse(stripCodeFences(raw));
+  } catch {
+    return { ok: false, reason: `model returned non-JSON: ${truncate(raw)}` };
+  }
+
+  let items: unknown[];
+  if (Array.isArray(data)) {
+    items = data;
+  } else if (typeof data === "object" && data !== null) {
+    const record = data as Record<string, unknown>;
+    if (record.error === "not_a_spend") {
+      return { ok: false, reason: "message does not describe a spend" };
+    }
+    if (Array.isArray(record.spends)) {
+      items = record.spends;
+    } else if ("amount" in record) {
+      items = [record];
+    } else {
+      return { ok: false, reason: `model returned unexpected shape: ${truncate(raw)}` };
+    }
+  } else {
+    return { ok: false, reason: `model returned non-object JSON: ${truncate(raw)}` };
+  }
+
+  if (items.length === 0) {
+    return { ok: false, reason: "model returned no spends" };
+  }
+  if (items.length > MAX_ITEMS) {
+    return { ok: false, reason: `model returned ${items.length} spends, cap is ${MAX_ITEMS}` };
+  }
+
+  const spends: SpendDraft[] = [];
+  for (const [index, item] of items.entries()) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      return { ok: false, reason: `entry ${index} is not an object` };
+    }
+    const result = validateSpendObject(item as Record<string, unknown>);
+    if (!result.ok) {
+      return { ok: false, reason: `entry ${index}: ${result.reason}` };
+    }
+    spends.push(result.spend);
+  }
+  return { ok: true, spends };
+}
+
+/** Shared per-spend validation; treats the model output as untrusted input. */
+function validateSpendObject(record: Record<string, unknown>): ParseResult {
   const amount = record.amount;
   if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
     return { ok: false, reason: `invalid amount: ${JSON.stringify(amount)}` };

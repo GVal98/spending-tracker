@@ -5,10 +5,12 @@
  */
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const REQUEST_TIMEOUT_MS = 30_000;
+// Image inputs can take noticeably longer than text-only calls.
+const REQUEST_TIMEOUT_MS = 60_000;
 
 export interface OpenRouterClient {
-  complete(prompt: string): Promise<string>;
+  /** imageDataUrl: optional base64 data URL (e.g. "data:image/jpeg;base64,..."). */
+  complete(prompt: string, imageDataUrl?: string): Promise<string>;
 }
 
 export function createOpenRouterClient(options: {
@@ -16,7 +18,13 @@ export function createOpenRouterClient(options: {
   model: string;
 }): OpenRouterClient {
   return {
-    async complete(prompt: string): Promise<string> {
+    async complete(prompt: string, imageDataUrl?: string): Promise<string> {
+      const userContent = imageDataUrl
+        ? [
+            { type: "image_url", image_url: { url: imageDataUrl } },
+            { type: "text", text: prompt },
+          ]
+        : prompt;
       const response = await fetch(OPENROUTER_URL, {
         method: "POST",
         headers: {
@@ -25,7 +33,7 @@ export function createOpenRouterClient(options: {
         },
         body: JSON.stringify({
           model: options.model,
-          messages: [{ role: "user", content: prompt }],
+          messages: [{ role: "user", content: userContent }],
         }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
