@@ -110,6 +110,20 @@ src/
   the query filters `created_at` (ISO UTC) by half-open range. No LLM involved
   — pure SQL + arithmetic, deterministic.
 
+## Iteration 6 (done)
+
+- **Tag schema rework**: a tag is now `{ id, label, hint }` in `spend/tags.ts` —
+  stable English `id` (stored in the DB tags JSON and required in LLM output),
+  Russian `label` (shown in confirmations and /stats), and a `hint` embedded in
+  every extraction/edit prompt that draws the line between adjacent tags
+  (prepared_food vs restaurants vs groceries, telecom vs other_subscriptions
+  vs dev_project). New 15-tag list: rent_utilities, transport, household,
+  prepared_food, groceries, restaurants, health, entertainment, telecom,
+  dev_project, other_subscriptions, delivery_fees, clothes, travel, other.
+  `other` remains the parse fallback when the model returns no valid tag.
+  No data migration: real tracking hadn't started, so the DB was wiped instead
+  (agreed 2026-09-01).
+
 ## Later (explicitly out of MVP)
 
 - **Natural-language stats** — “how much on food in July?” → LLM picks period +

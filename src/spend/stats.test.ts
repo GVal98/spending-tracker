@@ -82,21 +82,25 @@ describe("computeStats", () => {
   });
 
   it("counts_a_multi_tag_spend_fully_under_each_tag", () => {
-    const stats = computeStats([{ amount: 10, tags: ["food", "fun"] }]);
+    const stats = computeStats([{ amount: 10, tags: ["restaurants", "entertainment"] }]);
     expect(stats.total).toBe(10);
     expect(stats.byTag).toEqual([
-      { tag: "food", total: 10, count: 1 },
-      { tag: "fun", total: 10, count: 1 },
+      { tag: "entertainment", total: 10, count: 1 },
+      { tag: "restaurants", total: 10, count: 1 },
     ]);
   });
 
-  it("sorts_tags_by_total_desc_then_name", () => {
+  it("sorts_tags_by_total_desc_then_id", () => {
     const stats = computeStats([
       { amount: 5, tags: ["transport"] },
       { amount: 20, tags: ["groceries"] },
-      { amount: 5, tags: ["food"] },
+      { amount: 5, tags: ["restaurants"] },
     ]);
-    expect(stats.byTag.map((s) => s.tag)).toEqual(["groceries", "food", "transport"]);
+    expect(stats.byTag.map((s) => s.tag)).toEqual([
+      "groceries",
+      "restaurants",
+      "transport",
+    ]);
   });
 });
 
@@ -107,21 +111,21 @@ describe("formatStatsMessage", () => {
     );
   });
 
-  it("formats_total_count_and_tag_lines", () => {
+  it("formats_total_count_and_tag_label_lines", () => {
     const message = formatStatsMessage(
       "September 2026",
       computeStats([
-        { amount: 6.5, tags: ["food"] },
+        { amount: 6.5, tags: ["restaurants"] },
         { amount: 12, tags: ["transport"] },
       ]),
     );
     expect(message).toBe(
-      "September 2026\nTotal: 18.5 (2 spends)\n\ntransport: 12 (1)\nfood: 6.5 (1)",
+      "September 2026\nTotal: 18.5 (2 spends)\n\nТранспорт: 12 (1)\nРестораны и фастфуд: 6.5 (1)",
     );
   });
 
   it("uses_singular_spend_for_a_single_record", () => {
-    const message = formatStatsMessage("September 2026", computeStats([{ amount: 5, tags: ["food"] }]));
+    const message = formatStatsMessage("September 2026", computeStats([{ amount: 5, tags: ["groceries"] }]));
     expect(message).toContain("(1 spend)");
   });
 
@@ -129,12 +133,12 @@ describe("formatStatsMessage", () => {
     const message = formatStatsMessage(
       "September 2026",
       computeStats([
-        { amount: 0.1, tags: ["food"] },
-        { amount: 0.2, tags: ["food"] },
+        { amount: 0.1, tags: ["groceries"] },
+        { amount: 0.2, tags: ["groceries"] },
       ]),
     );
     expect(message).toContain("Total: 0.3");
-    expect(message).toContain("food: 0.3 (2)");
+    expect(message).toContain("Продукты: 0.3 (2)");
   });
 });
 

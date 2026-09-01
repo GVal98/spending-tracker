@@ -13,11 +13,15 @@ import { TAGS } from "./tags.js";
 describe("parseLlmResponse", () => {
   it("accepts_a_valid_spend", () => {
     const result = parseLlmResponse(
-      '{"amount": 6.5, "description": "coffee with Anna", "tags": ["food", "fun"]}',
+      '{"amount": 6.5, "description": "coffee with Anna", "tags": ["restaurants", "entertainment"]}',
     );
     expect(result).toEqual({
       ok: true,
-      spend: { amount: 6.5, description: "coffee with Anna", tags: ["food", "fun"] },
+      spend: {
+        amount: 6.5,
+        description: "coffee with Anna",
+        tags: ["restaurants", "entertainment"],
+      },
     });
   });
 
@@ -30,9 +34,9 @@ describe("parseLlmResponse", () => {
 
   it("drops_unknown_tags_but_keeps_valid_ones", () => {
     const result = parseLlmResponse(
-      '{"amount": 5, "description": "snack", "tags": ["food", "made-up-tag"]}',
+      '{"amount": 5, "description": "snack", "tags": ["groceries", "made-up-tag"]}',
     );
-    expect(result).toMatchObject({ ok: true, spend: { tags: ["food"] } });
+    expect(result).toMatchObject({ ok: true, spend: { tags: ["groceries"] } });
   });
 
   it("falls_back_to_other_when_no_valid_tags_remain", () => {
@@ -44,9 +48,9 @@ describe("parseLlmResponse", () => {
 
   it("deduplicates_tags", () => {
     const result = parseLlmResponse(
-      '{"amount": 5, "description": "lunch", "tags": ["food", "food"]}',
+      '{"amount": 5, "description": "lunch", "tags": ["restaurants", "restaurants"]}',
     );
-    expect(result).toMatchObject({ ok: true, spend: { tags: ["food"] } });
+    expect(result).toMatchObject({ ok: true, spend: { tags: ["restaurants"] } });
   });
 
   it("rejects_not_a_spend_marker", () => {
@@ -65,19 +69,19 @@ describe("parseLlmResponse", () => {
   });
 
   it.each([
-    ["missing", '{"description": "x", "tags": ["food"]}'],
-    ["zero", '{"amount": 0, "description": "x", "tags": ["food"]}'],
-    ["negative", '{"amount": -3, "description": "x", "tags": ["food"]}'],
-    ["string", '{"amount": "6.50", "description": "x", "tags": ["food"]}'],
-    ["infinite", '{"amount": 1e999, "description": "x", "tags": ["food"]}'],
+    ["missing", '{"description": "x", "tags": ["groceries"]}'],
+    ["zero", '{"amount": 0, "description": "x", "tags": ["groceries"]}'],
+    ["negative", '{"amount": -3, "description": "x", "tags": ["groceries"]}'],
+    ["string", '{"amount": "6.50", "description": "x", "tags": ["groceries"]}'],
+    ["infinite", '{"amount": 1e999, "description": "x", "tags": ["groceries"]}'],
   ])("rejects_%s_amount", (_label, raw) => {
     expect(parseLlmResponse(raw).ok).toBe(false);
   });
 
   it("rejects_missing_or_blank_description", () => {
-    expect(parseLlmResponse('{"amount": 5, "tags": ["food"]}').ok).toBe(false);
+    expect(parseLlmResponse('{"amount": 5, "tags": ["groceries"]}').ok).toBe(false);
     expect(
-      parseLlmResponse('{"amount": 5, "description": "   ", "tags": ["food"]}').ok,
+      parseLlmResponse('{"amount": 5, "description": "   ", "tags": ["groceries"]}').ok,
     ).toBe(false);
   });
 
@@ -88,11 +92,11 @@ describe("parseLlmResponse", () => {
 });
 
 describe("buildExtractionPrompt", () => {
-  it("includes_the_message_and_every_allowed_tag", () => {
+  it("includes_the_message_and_every_tag_id_label_and_hint", () => {
     const prompt = buildExtractionPrompt("coffee 3.20");
     expect(prompt).toContain("coffee 3.20");
-    for (const tag of TAGS) {
-      expect(prompt).toContain(tag);
+    for (const tagDef of TAGS) {
+      expect(prompt).toContain(`- ${tagDef.id} (${tagDef.label}): ${tagDef.hint}`);
     }
   });
 });
@@ -102,13 +106,13 @@ describe("parseLlmResponseList", () => {
     const result = parseLlmResponseList(
       '{"spends": [' +
         '{"amount": 2.1, "description": "milk", "tags": ["groceries"]},' +
-        '{"amount": 5.99, "description": "wine", "tags": ["fun"]}]}',
+        '{"amount": 5.99, "description": "wine", "tags": ["entertainment"]}]}',
     );
     expect(result).toEqual({
       ok: true,
       spends: [
         { amount: 2.1, description: "milk", tags: ["groceries"] },
-        { amount: 5.99, description: "wine", tags: ["fun"] },
+        { amount: 5.99, description: "wine", tags: ["entertainment"] },
       ],
     });
   });
@@ -122,7 +126,7 @@ describe("parseLlmResponseList", () => {
 
   it("wraps_a_bare_single_spend_object", () => {
     const result = parseLlmResponseList(
-      '{"amount": 6.5, "description": "coffee", "tags": ["food"]}',
+      '{"amount": 6.5, "description": "coffee", "tags": ["restaurants"]}',
     );
     expect(result).toMatchObject({ ok: true, spends: [{ amount: 6.5 }] });
   });
@@ -172,10 +176,10 @@ describe("parseLlmResponseList", () => {
 });
 
 describe("buildPhotoExtractionPrompt", () => {
-  it("includes_every_allowed_tag", () => {
+  it("includes_every_tag_id_label_and_hint", () => {
     const prompt = buildPhotoExtractionPrompt("");
-    for (const tag of TAGS) {
-      expect(prompt).toContain(tag);
+    for (const tagDef of TAGS) {
+      expect(prompt).toContain(`- ${tagDef.id} (${tagDef.label}): ${tagDef.hint}`);
     }
   });
 
@@ -192,10 +196,10 @@ describe("buildPhotoExtractionPrompt", () => {
 });
 
 describe("buildAudioExtractionPrompt", () => {
-  it("includes_every_allowed_tag", () => {
+  it("includes_every_tag_id_label_and_hint", () => {
     const prompt = buildAudioExtractionPrompt("");
-    for (const tag of TAGS) {
-      expect(prompt).toContain(tag);
+    for (const tagDef of TAGS) {
+      expect(prompt).toContain(`- ${tagDef.id} (${tagDef.label}): ${tagDef.hint}`);
     }
   });
 
@@ -208,14 +212,14 @@ describe("buildAudioExtractionPrompt", () => {
 describe("buildEditPrompt", () => {
   it("includes_existing_spend_correction_and_allowed_tags", () => {
     const prompt = buildEditPrompt(
-      { amount: 6.5, description: "coffee with Anna", tags: ["food"] },
+      { amount: 6.5, description: "coffee with Anna", tags: ["restaurants"] },
       "actually 7.50",
     );
     expect(prompt).toContain('"amount":6.5');
     expect(prompt).toContain("coffee with Anna");
     expect(prompt).toContain("actually 7.50");
-    for (const tag of TAGS) {
-      expect(prompt).toContain(tag);
+    for (const tagDef of TAGS) {
+      expect(prompt).toContain(`- ${tagDef.id} (${tagDef.label}): ${tagDef.hint}`);
     }
   });
 });

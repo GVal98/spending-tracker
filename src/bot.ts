@@ -21,6 +21,7 @@ import {
   roundAmount,
 } from "./spend/stats.js";
 import { createSpendStore, type Spend } from "./spend/store.js";
+import { tagLabel } from "./spend/tags.js";
 
 const LIST_LIMIT = 10;
 
@@ -274,7 +275,7 @@ async function completeOrNull(
 
 function formatSpend(spend: Spend): string {
   const date = spend.createdAt.slice(0, 10);
-  return `${spend.amount} — ${spend.description} [${spend.tags.join(", ")}] ${date}`;
+  return `${spend.amount} — ${spend.description} [${spend.tags.map(tagLabel).join(", ")}] ${date}`;
 }
 bot.catch((error) => {
   console.error("bot error:", error);

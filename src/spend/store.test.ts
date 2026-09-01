@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSpendStore, type SpendStore } from "./store.js";
 import type { SpendDraft } from "./parse.js";
 
-const COFFEE: SpendDraft = { amount: 6.5, description: "coffee", tags: ["food"] };
+const COFFEE: SpendDraft = { amount: 6.5, description: "coffee", tags: ["restaurants"] };
 const BUS: SpendDraft = { amount: 2, description: "bus", tags: ["transport"] };
 
 describe("SpendStore", () => {
@@ -71,14 +71,14 @@ describe("SpendStore", () => {
     const spend = store.insert(COFFEE, "coffee 6.50");
     const updated = store.update(
       spend.id,
-      { amount: 7.5, description: "coffee", tags: ["food", "fun"] },
+      { amount: 7.5, description: "coffee", tags: ["restaurants", "entertainment"] },
       "actually 7.50",
     );
     expect(updated).toEqual({
       id: spend.id,
       amount: 7.5,
       description: "coffee",
-      tags: ["food", "fun"],
+      tags: ["restaurants", "entertainment"],
       rawText: "actually 7.50",
       createdAt: spend.createdAt,
     });

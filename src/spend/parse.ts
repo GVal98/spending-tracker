@@ -19,6 +19,15 @@ export type ParseListResult =
 const MAX_ITEMS = 100;
 
 /**
+ * Shared prompt block listing allowed tags: the id the model must output,
+ * the human label, and a hint drawing the line between adjacent tags.
+ */
+const ALLOWED_TAGS_BLOCK = [
+  "Allowed tags — output ids only, pick by the descriptions:",
+  ...TAGS.map((tagDef) => `- ${tagDef.id} (${tagDef.label}): ${tagDef.hint}`),
+].join("\n");
+
+/**
  * Prompt for the LLM extraction call. The model must answer with bare JSON:
  * a {"spends": [...]} array (one entry per spend mentioned) or
  * {"error": "not_a_spend"} when the message does not describe a spend.
@@ -27,7 +36,7 @@ export function buildExtractionPrompt(messageText: string): string {
   return [
     "You extract spending records from a short user message.",
     "",
-    `Allowed tags: ${TAGS.join(", ")}`,
+    ALLOWED_TAGS_BLOCK,
     "",
     "Respond with JSON only, no prose, no code fences. Shape:",
     '{"spends": [{"amount": <positive number>, "description": "<short description>", "tags": ["<tag>", ...]}, ...]}',
@@ -36,7 +45,7 @@ export function buildExtractionPrompt(messageText: string): string {
     "- One entry per distinct spend mentioned in the message (usually one; e.g. “coffee 5 and taxi 12” is two).",
     "- amount: the money spent on that entry, as a plain number.",
     "- description: short, human-readable, taken from the message.",
-    '- tags: 1 or more tags from the allowed list that fit that entry. Use "other" only when nothing else fits.',
+    '- tags: 1 or more tag ids from the allowed list that fit that entry. Use "other" only when nothing else fits.',
     '- If the message describes no spend at all (no amount, or not about spending), respond with {"error": "not_a_spend"}.',
     "",
     "Message:",
@@ -53,7 +62,7 @@ export function buildPhotoExtractionPrompt(caption: string): string {
   const lines = [
     "You extract spending records from a photo — usually a receipt, sometimes a price tag or a payment screenshot.",
     "",
-    `Allowed tags: ${TAGS.join(", ")}`,
+    ALLOWED_TAGS_BLOCK,
     "",
     "Respond with JSON only, no prose, no code fences. Shape:",
     '{"spends": [{"amount": <positive number>, "description": "<short description>", "tags": ["<tag>", ...]}, ...]}',
@@ -62,7 +71,7 @@ export function buildPhotoExtractionPrompt(caption: string): string {
     "- A receipt with multiple line items → one entry PER LINE ITEM: amount is that line's total (after its own discount), description is the item name cleaned up to be human-readable, tags fit that item.",
     "- Do NOT add an extra entry for the receipt's grand total.",
     "- A photo of a single spend (one item, price tag, payment screenshot) → an array with one entry.",
-    '- tags: 1 or more tags from the allowed list per entry. Use "other" only when nothing else fits.',
+    '- tags: 1 or more tag ids from the allowed list per entry. Use "other" only when nothing else fits.',
     '- If the photo does not show a spend, respond with {"error": "not_a_spend"}.',
   ];
   if (caption.trim() !== "") {
@@ -84,7 +93,7 @@ export function buildAudioExtractionPrompt(caption: string): string {
   const lines = [
     "You extract spending records from a voice message where the user describes what they spent money on.",
     "",
-    `Allowed tags: ${TAGS.join(", ")}`,
+    ALLOWED_TAGS_BLOCK,
     "",
     "Respond with JSON only, no prose, no code fences. Shape:",
     '{"spends": [{"amount": <positive number>, "description": "<short description>", "tags": ["<tag>", ...]}, ...]}',
@@ -93,7 +102,7 @@ export function buildAudioExtractionPrompt(caption: string): string {
     "- One entry per distinct spend mentioned (usually one; “coffee five euros and taxi twelve” is two).",
     "- amount: the money spent on that entry, as a plain number (spoken numbers like “six fifty” → 6.5).",
     "- description: short and human-readable, based on what was said.",
-    '- tags: 1 or more tags from the allowed list that fit that entry. Use "other" only when nothing else fits.',
+    '- tags: 1 or more tag ids from the allowed list that fit that entry. Use "other" only when nothing else fits.',
     '- If the audio does not describe a spend, respond with {"error": "not_a_spend"}.',
   ];
   if (caption.trim() !== "") {
@@ -116,7 +125,7 @@ export function buildEditPrompt(existing: SpendDraft, correctionText: string): s
   return [
     "You update an existing spending record based on a user's correction message.",
     "",
-    `Allowed tags: ${TAGS.join(", ")}`,
+    ALLOWED_TAGS_BLOCK,
     "",
     "Existing spend:",
     JSON.stringify({

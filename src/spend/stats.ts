@@ -1,4 +1,4 @@
-import type { Tag } from "./tags.js";
+import { tagLabel, type Tag } from "./tags.js";
 
 /**
  * Period resolution and stats aggregation for /stats. Pure — boundaries are
@@ -78,7 +78,7 @@ export function formatStatsMessage(label: string, stats: SpendStats): string {
   }
   const spendWord = stats.count === 1 ? "spend" : "spends";
   const tagLines = stats.byTag.map(
-    (stat) => `${stat.tag}: ${roundAmount(stat.total)} (${stat.count})`,
+    (stat) => `${tagLabel(stat.tag)}: ${roundAmount(stat.total)} (${stat.count})`,
   );
   // Per-tag totals overlap (multi-tag spends count under each tag), so the
   // overall total is reported separately, never summed from the rows.
