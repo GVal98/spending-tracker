@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildExtractionPrompt, parseLlmResponse } from "./parse.js";
+import {
+  buildEditPrompt,
+  buildExtractionPrompt,
+  isDeleteRequest,
+  parseLlmResponse,
+} from "./parse.js";
 import { TAGS } from "./tags.js";
 
 describe("parseLlmResponse", () => {
@@ -87,4 +92,35 @@ describe("buildExtractionPrompt", () => {
       expect(prompt).toContain(tag);
     }
   });
+});
+
+describe("buildEditPrompt", () => {
+  it("includes_existing_spend_correction_and_allowed_tags", () => {
+    const prompt = buildEditPrompt(
+      { amount: 6.5, description: "coffee with Anna", tags: ["food"] },
+      "actually 7.50",
+    );
+    expect(prompt).toContain('"amount":6.5');
+    expect(prompt).toContain("coffee with Anna");
+    expect(prompt).toContain("actually 7.50");
+    for (const tag of TAGS) {
+      expect(prompt).toContain(tag);
+    }
+  });
+});
+
+describe("isDeleteRequest", () => {
+  it.each(["delete", "Delete", " DELETE ", "del", "remove"])(
+    "recognizes_%s_as_delete",
+    (text) => {
+      expect(isDeleteRequest(text)).toBe(true);
+    },
+  );
+
+  it.each(["", "actually 7.50", "delete the tag", "removed"])(
+    "does_not_treat_%s_as_delete",
+    (text) => {
+      expect(isDeleteRequest(text)).toBe(false);
+    },
+  );
 });

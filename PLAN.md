@@ -60,10 +60,19 @@ src/
     openrouter.ts  # thin fetch client for chat completions
 ```
 
+## Iteration 2 (done)
+
+- **Edit / delete via reply-to-message**: replying to a bot confirmation
+  (“Saved:” / “Updated:”) with `delete`/`del`/`remove` deletes that spend;
+  replying with a correction (e.g. “actually 7.50”) sends the existing spend +
+  correction to the LLM and fully replaces amount/description/tags.
+  Confirmation messages are linked to spends in `spend_messages`
+  (`telegram_message_id PK, spend_id`), including new “Updated:” confirmations,
+  so any of them works as a reply target. `created_at` is preserved on edit.
+
 ## Later (explicitly out of MVP)
 
 - **/stats** — totals per tag for week/month
-- **Edit / delete** — reply-to-message to correct or remove a spend
 - **Audio** — voice message → transcription → same parse pipeline
 - **Photo** — receipt photo → vision model → same parse pipeline
 - **Dynamic tags** — manage tags via bot commands instead of hardcode

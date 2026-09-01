@@ -1,7 +1,12 @@
 import { Bot } from "grammy";
 import { loadConfig } from "./config.js";
 import { createOpenRouterClient } from "./llm/openrouter.js";
-import { buildExtractionPrompt, parseLlmResponse } from "./spend/parse.js";
+import {
+  buildEditPrompt,
+  buildExtractionPrompt,
+  isDeleteRequest,
+  parseLlmResponse,
+} from "./spend/parse.js";
 import { createSpendStore, type Spend } from "./spend/store.js";
 
 const LIST_LIMIT = 10;
@@ -27,7 +32,9 @@ bot.use(async (ctx, next) => {
 bot.command("start", async (ctx) => {
   await ctx.reply(
     "Send me a spend like “coffee with Anna 6.50” and I'll track it.\n" +
-      `Use /list to see your last ${LIST_LIMIT} spends.`,
+      `Use /list to see your last ${LIST_LIMIT} spends.\n` +
+      "Reply to a confirmation with a correction (e.g. “actually 7.50”) to edit, " +
+      "or with “delete” to remove that spend.",
   );
 });
 
@@ -42,11 +49,14 @@ bot.command("list", async (ctx) => {
 
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text;
-  let llmResponse: string;
-  try {
-    llmResponse = await llm.complete(buildExtractionPrompt(text));
-  } catch (error) {
-    console.error("LLM request failed:", error);
+  const replyTo = ctx.message.reply_to_message;
+  if (replyTo) {
+    await handleCorrection(ctx, replyTo.message_id, text);
+    return;
+  }
+
+  const llmResponse = await completeOrNull(buildExtractionPrompt(text));
+  if (llmResponse === null) {
     await ctx.reply("Couldn't reach the parsing service, please try again.");
     return;
   }
@@ -62,8 +72,61 @@ bot.on("message:text", async (ctx) => {
 
   const spend = store.insert(result.spend, text);
   console.log(`saved spend #${spend.id}: ${spend.amount} ${spend.description}`);
-  await ctx.reply(`Saved: ${formatSpend(spend)}`);
+  const confirmation = await ctx.reply(`Saved: ${formatSpend(spend)}`);
+  store.linkMessage(spend.id, confirmation.message_id);
 });
+
+/** Edit or delete flow: the user replied to one of our confirmation messages. */
+async function handleCorrection(
+  ctx: { reply: (text: string) => Promise<{ message_id: number }> },
+  repliedToMessageId: number,
+  text: string,
+): Promise<void> {
+  const spend = store.findByMessageId(repliedToMessageId);
+  if (!spend) {
+    await ctx.reply(
+      "I can only edit or delete when you reply to one of my “Saved:” or “Updated:” messages.",
+    );
+    return;
+  }
+
+  if (isDeleteRequest(text)) {
+    store.delete(spend.id);
+    console.log(`deleted spend #${spend.id}`);
+    await ctx.reply(`Deleted: ${formatSpend(spend)}`);
+    return;
+  }
+
+  const llmResponse = await completeOrNull(buildEditPrompt(spend, text));
+  if (llmResponse === null) {
+    await ctx.reply("Couldn't reach the parsing service, please try again.");
+    return;
+  }
+
+  const result = parseLlmResponse(llmResponse);
+  if (!result.ok) {
+    console.warn(`edit parse failed for "${text}": ${result.reason}`);
+    await ctx.reply(
+      "Couldn't parse that correction. Try e.g. “actually 7.50”, “tag as travel”, or “delete”.",
+    );
+    return;
+  }
+
+  const updated = store.update(spend.id, result.spend, text);
+  console.log(`updated spend #${updated.id}: ${updated.amount} ${updated.description}`);
+  const confirmation = await ctx.reply(`Updated: ${formatSpend(updated)}`);
+  store.linkMessage(updated.id, confirmation.message_id);
+}
+
+/** Expected boundary failure (network/LLM down) → null; caller replies to user. */
+async function completeOrNull(prompt: string): Promise<string | null> {
+  try {
+    return await llm.complete(prompt);
+  } catch (error) {
+    console.error("LLM request failed:", error);
+    return null;
+  }
+}
 
 function formatSpend(spend: Spend): string {
   const date = spend.createdAt.slice(0, 10);

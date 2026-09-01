@@ -37,6 +37,43 @@ export function buildExtractionPrompt(messageText: string): string {
 }
 
 /**
+ * Prompt for correcting an existing spend from a reply message. The model
+ * returns the full updated spend (same shape as extraction), applying only
+ * the requested changes.
+ */
+export function buildEditPrompt(existing: SpendDraft, correctionText: string): string {
+  return [
+    "You update an existing spending record based on a user's correction message.",
+    "",
+    `Allowed tags: ${TAGS.join(", ")}`,
+    "",
+    "Existing spend:",
+    JSON.stringify({
+      amount: existing.amount,
+      description: existing.description,
+      tags: existing.tags,
+    }),
+    "",
+    "Respond with the FULL updated spend as JSON only, no prose, no code fences. Shape:",
+    '{"amount": <positive number>, "description": "<short description>", "tags": ["<tag>", ...]}',
+    "",
+    "Rules:",
+    "- Apply only the changes the correction asks for; keep every other field unchanged.",
+    '- If the correction cannot be understood as a change to this spend, respond with {"error": "not_a_spend"}.',
+    "",
+    "Correction:",
+    correctionText,
+  ].join("\n");
+}
+
+const DELETE_KEYWORDS = new Set(["delete", "del", "remove"]);
+
+/** True when a reply message asks to delete the spend instead of editing it. */
+export function isDeleteRequest(text: string): boolean {
+  return DELETE_KEYWORDS.has(text.trim().toLowerCase());
+}
+
+/**
  * Validates the raw LLM response into a SpendDraft. Pure; treats the model
  * output as untrusted input. Unknown tags are dropped (model noise), but an
  * invalid amount or empty description rejects the whole parse — better to ask
