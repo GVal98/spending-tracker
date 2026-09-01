@@ -34,6 +34,14 @@ describe("SpendStore", () => {
     expect(store.listRecent(10)).toEqual([]);
   });
 
+  it("listBetween_includes_from_boundary_and_excludes_to_boundary", () => {
+    const spend = store.insert(COFFEE, "coffee 6.50");
+    const justAfter = new Date(Date.parse(spend.createdAt) + 1).toISOString();
+    expect(store.listBetween(spend.createdAt, justAfter)).toEqual([spend]);
+    expect(store.listBetween(spend.createdAt, spend.createdAt)).toEqual([]);
+    expect(store.listBetween(justAfter, "9999-12-31T00:00:00.000Z")).toEqual([]);
+  });
+
   it("listRecent_returns_newest_first_and_respects_limit", () => {
     store.insert(COFFEE, "coffee 6.50");
     const second = store.insert(BUS, "bus 2");

@@ -14,6 +14,12 @@ import {
   parseLlmResponse,
   parseLlmResponseList,
 } from "./spend/parse.js";
+import {
+  computeStats,
+  formatStatsMessage,
+  resolvePeriod,
+  roundAmount,
+} from "./spend/stats.js";
 import { createSpendStore, type Spend } from "./spend/store.js";
 
 const LIST_LIMIT = 10;
@@ -40,7 +46,8 @@ bot.command("start", async (ctx) => {
   await ctx.reply(
     "Send me a spend like “coffee with Anna 6.50” and I'll track it — " +
     "several in one message works too (“coffee 5, taxi 12”).\n" +
-      `Use /list to see your last ${LIST_LIMIT} spends.\n` +
+      `Use /list to see your last ${LIST_LIMIT} spends, ` +
+      "/stats for this month's totals per tag (/stats week, /stats prev).\n" +
       "You can also send a photo of a receipt or a voice message (caption optional).\n" +
       "Reply to a confirmation with a correction (e.g. “actually 7.50”) to edit, " +
       "or with “delete” to remove that spend.",
@@ -54,6 +61,21 @@ bot.command("list", async (ctx) => {
     return;
   }
   await ctx.reply(spends.map(formatSpend).join("\n"));
+});
+
+bot.command("stats", async (ctx) => {
+  const period = resolvePeriod(ctx.match, new Date());
+  if (!period) {
+    await ctx.reply(
+      "Usage: /stats (this month), /stats week (this week), /stats prev (last month)",
+    );
+    return;
+  }
+  const spends = store.listBetween(
+    period.from.toISOString(),
+    period.to.toISOString(),
+  );
+  await ctx.reply(formatStatsMessage(period.label, computeStats(spends)));
 });
 
 bot.on("message:text", async (ctx) => {
@@ -162,7 +184,7 @@ async function extractAndSave(
   );
   if (spends.length > 1) {
     const total = spends.reduce((sum, spend) => sum + spend.amount, 0);
-    await ctx.reply(`Saved ${spends.length} items, total ${formatAmount(total)}:`);
+    await ctx.reply(`Saved ${spends.length} items, total ${roundAmount(total)}:`);
   }
   // Sequential on purpose: confirmations must arrive in receipt order.
   for (const spend of spends) {
@@ -254,12 +276,6 @@ function formatSpend(spend: Spend): string {
   const date = spend.createdAt.slice(0, 10);
   return `${spend.amount} — ${spend.description} [${spend.tags.join(", ")}] ${date}`;
 }
-
-/** Sums of REAL amounts accumulate float noise (6.5 + 2.99 + ...); round for display. */
-function formatAmount(amount: number): number {
-  return Number(amount.toFixed(2));
-}
-
 bot.catch((error) => {
   console.error("bot error:", error);
 });

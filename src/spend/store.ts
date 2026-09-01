@@ -20,6 +20,8 @@ export interface SpendStore {
   linkMessage(spendId: number, telegramMessageId: number): void;
   findByMessageId(telegramMessageId: number): Spend | undefined;
   listRecent(limit: number): Spend[];
+  /** Spends with fromIso <= created_at < toIso (ISO UTC strings compare lexicographically). */
+  listBetween(fromIso: string, toIso: string): Spend[];
   close(): void;
 }
 
@@ -72,6 +74,10 @@ export function createSpendStore(dbPath: string): SpendStore {
   const listStatement = db.prepare(
     `SELECT id, amount, description, tags, raw_text, created_at
      FROM spends ORDER BY id DESC LIMIT ?`,
+  );
+  const listBetweenStatement = db.prepare(
+    `SELECT id, amount, description, tags, raw_text, created_at
+     FROM spends WHERE created_at >= ? AND created_at < ? ORDER BY id`,
   );
   const linkMessageStatement = db.prepare(
     `INSERT OR REPLACE INTO spend_messages (telegram_message_id, spend_id)
@@ -157,6 +163,11 @@ export function createSpendStore(dbPath: string): SpendStore {
 
     listRecent(limit: number): Spend[] {
       const rows = listStatement.all(limit) as SpendRow[];
+      return rows.map(toSpend);
+    },
+
+    listBetween(fromIso: string, toIso: string): Spend[] {
+      const rows = listBetweenStatement.all(fromIso, toIso) as SpendRow[];
       return rows.map(toSpend);
     },
 

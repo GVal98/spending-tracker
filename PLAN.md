@@ -100,9 +100,22 @@ src/
   the caption; media downloads share one helper with photos (10MB cap, bytes
   re-uploaded rather than exposing the bot-token file URL).
 
+## Iteration 5 (done)
+
+- **/stats**: `/stats` → this month, `/stats week` → this week (Monday start),
+  `/stats prev` → last month. Shows overall total + spend count, then per-tag
+  totals sorted desc. Multi-tag spends count fully under each of their tags,
+  so per-tag rows overlap and deliberately don't sum to the total. Period
+  boundaries use the machine's local time (bot runs on the owner's machine);
+  the query filters `created_at` (ISO UTC) by half-open range. No LLM involved
+  — pure SQL + arithmetic, deterministic.
+
 ## Later (explicitly out of MVP)
 
-- **/stats** — totals per tag for week/month
+- **Natural-language stats** — “how much on food in July?” → LLM picks period +
+  tag filter only (never writes SQL; arithmetic stays ours)
+- **spent_at date extraction** — “yesterday: coffee 5” currently lands on the
+  logging date; extract the intended date into a separate field
 - **Dynamic tags** — manage tags via bot commands instead of hardcode
 - **Multi-currency** — MVP assumes one implicit currency
 - **CSV export**
