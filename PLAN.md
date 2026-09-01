@@ -124,10 +124,32 @@ src/
   No data migration: real tracking hadn't started, so the DB was wiped instead
   (agreed 2026-09-01).
 
+## Iteration 7 (done)
+
+- **Spending limits**: hardcoded in `spend/limits.ts` (like tags) — a limit is
+  `{ id, label, tags, monthlyAmount }`; a spend counts toward a limit (once,
+  full amount) when any of its tags is in the limit's tag set. Configured:
+  «Еда» 40 000/мес (prepared_food + groceries + restaurants; delivery_fees
+  deliberately excluded) and «Транспорт» 15 000/мес. Only monthly amounts are
+  configured; the weekly allowance is derived at the same daily pace
+  (monthly × 7 / days-in-month, using the week-start Monday's month), so
+  weekly tracking needs no second number. Shown in two places: after a
+  save/update touching a limited tag — one message with month + week usage
+  (“Еда: за месяц 12500 / 40000 (31%), за неделю …”, ⚠️ at ≥100%); and in
+  /stats — a «Лимиты» block (monthly allowance for month periods, weekly for
+  /stats week). `Period` gained a `kind: "month" | "week"` for this. Deletes
+  don't report limit status (agreed scope cut). An overall
+  everything-except-fixed-costs limit (~100k idea) was discussed and
+  deferred — the model supports it as just another limit entry.
+
 ## Later (explicitly out of MVP)
 
 - **Natural-language stats** — “how much on food in July?” → LLM picks period +
   tag filter only (never writes SQL; arithmetic stays ours)
+- **Overall “controllable spend” limit** — one more `LIMITS` entry defined by
+  exclusion (all tags except health / dev_project / rent_utilities / telecom);
+  needs exclusion semantics for multi-tag spends
+- **Dynamic limits** — change amounts via bot commands instead of editing code
 - **spent_at date extraction** — “yesterday: coffee 5” currently lands on the
   logging date; extract the intended date into a separate field
 - **Dynamic tags** — manage tags via bot commands instead of hardcode

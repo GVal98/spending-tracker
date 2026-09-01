@@ -15,13 +15,20 @@ import {
   parseLlmResponseList,
 } from "./spend/parse.js";
 import {
+  formatLimitUsage,
+  LIMITS,
+  limitsForTags,
+  sumUnderLimit,
+  weeklyLimitAmount,
+} from "./spend/limits.js";
+import {
   computeStats,
   formatStatsMessage,
   resolvePeriod,
   roundAmount,
 } from "./spend/stats.js";
 import { createSpendStore, type Spend } from "./spend/store.js";
-import { tagLabel } from "./spend/tags.js";
+import { tagLabel, type Tag } from "./spend/tags.js";
 
 const LIST_LIMIT = 10;
 
@@ -76,7 +83,19 @@ bot.command("stats", async (ctx) => {
     period.from.toISOString(),
     period.to.toISOString(),
   );
-  await ctx.reply(formatStatsMessage(period.label, computeStats(spends)));
+  const statsMessage = formatStatsMessage(period.label, computeStats(spends));
+  // For week periods the allowance is the monthly limit scaled to 7 days, so
+  // both views track the same pace off a single configured number.
+  const limitLines = LIMITS.map((limit) => {
+    const limitAmount =
+      period.kind === "week"
+        ? weeklyLimitAmount(limit, period.from)
+        : limit.monthlyAmount;
+    return `${limit.label}: ${formatLimitUsage(sumUnderLimit(limit, spends), limitAmount)}`;
+  });
+  const limitsBlock =
+    limitLines.length > 0 ? `\n\nЛимиты:\n${limitLines.join("\n")}` : "";
+  await ctx.reply(statsMessage + limitsBlock);
 });
 
 bot.on("message:text", async (ctx) => {
@@ -192,6 +211,45 @@ async function extractAndSave(
     const confirmation = await ctx.reply(`Saved: ${formatSpend(spend)}`);
     store.linkMessage(spend.id, confirmation.message_id);
   }
+  await replyLimitStatus(
+    ctx,
+    spends.flatMap((spend) => spend.tags),
+  );
+}
+
+/**
+ * After a save/update touching a limited tag: one message with the affected
+ * limits' month + week usage. The week allowance is derived from the monthly
+ * limit, so both lines track the same pace.
+ */
+async function replyLimitStatus(
+  ctx: { reply: (text: string) => Promise<unknown> },
+  tags: readonly Tag[],
+): Promise<void> {
+  const limits = limitsForTags(tags);
+  if (limits.length === 0) {
+    return;
+  }
+  const now = new Date();
+  const month = resolvePeriod("", now);
+  const week = resolvePeriod("week", now);
+  if (!month || !week) {
+    throw new Error("unreachable: built-in stats periods failed to resolve");
+  }
+  const monthSpends = store.listBetween(
+    month.from.toISOString(),
+    month.to.toISOString(),
+  );
+  const weekSpends = store.listBetween(
+    week.from.toISOString(),
+    week.to.toISOString(),
+  );
+  const lines = limits.map(
+    (limit) =>
+      `${limit.label}: за месяц ${formatLimitUsage(sumUnderLimit(limit, monthSpends), limit.monthlyAmount)}, ` +
+      `за неделю ${formatLimitUsage(sumUnderLimit(limit, weekSpends), weeklyLimitAmount(limit, week.from))}`,
+  );
+  await ctx.reply(lines.join("\n"));
 }
 
 const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
@@ -258,6 +316,9 @@ async function handleCorrection(
   console.log(`updated spend #${updated.id}: ${updated.amount} ${updated.description}`);
   const confirmation = await ctx.reply(`Updated: ${formatSpend(updated)}`);
   store.linkMessage(updated.id, confirmation.message_id);
+  // Old + new tags: an edit that moves a spend out of a limit changes that
+  // limit's usage too, so both sides get reported.
+  await replyLimitStatus(ctx, [...spend.tags, ...updated.tags]);
 }
 
 /** Expected boundary failure (network/LLM down) → null; caller replies to user. */

@@ -14,6 +14,7 @@ describe("resolvePeriod", () => {
     const period = resolvePeriod("", NOW);
     expect(period).toEqual({
       label: "September 2026",
+      kind: "month",
       from: new Date(2026, 8, 1),
       to: new Date(2026, 9, 1),
     });
@@ -27,6 +28,7 @@ describe("resolvePeriod", () => {
     const period = resolvePeriod("prev", NOW);
     expect(period).toEqual({
       label: "August 2026",
+      kind: "month",
       from: new Date(2026, 7, 1),
       to: new Date(2026, 8, 1),
     });
@@ -36,6 +38,7 @@ describe("resolvePeriod", () => {
     const period = resolvePeriod("prev", new Date(2026, 0, 10));
     expect(period).toEqual({
       label: "December 2025",
+      kind: "month",
       from: new Date(2025, 11, 1),
       to: new Date(2026, 0, 1),
     });
@@ -46,6 +49,7 @@ describe("resolvePeriod", () => {
     const period = resolvePeriod("week", NOW);
     expect(period).toEqual({
       label: "Week of September 14",
+      kind: "week",
       from: new Date(2026, 8, 14),
       to: new Date(2026, 8, 21),
     });

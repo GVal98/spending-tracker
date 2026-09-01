@@ -8,6 +8,8 @@ import { tagLabel, type Tag } from "./tags.js";
 
 export interface Period {
   label: string;
+  /** Month-shaped vs week-shaped period — decides which limit allowance applies. */
+  kind: "month" | "week";
   from: Date;
   to: Date;
 }
@@ -36,18 +38,18 @@ export function resolvePeriod(arg: string, now: Date): Period | undefined {
   if (normalized === "" || normalized === "month") {
     const from = new Date(now.getFullYear(), now.getMonth(), 1);
     const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    return { label: monthLabel(from), from, to };
+    return { label: monthLabel(from), kind: "month", from, to };
   }
   if (normalized === "prev" || normalized === "last") {
     const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const to = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { label: monthLabel(from), from, to };
+    return { label: monthLabel(from), kind: "month", from, to };
   }
   if (normalized === "week") {
     const daysSinceMonday = (now.getDay() + 6) % 7; // getDay(): Sunday = 0
     const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
     const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday + 7);
-    return { label: `Week of ${MONTHS[from.getMonth()]} ${from.getDate()}`, from, to };
+    return { label: `Week of ${MONTHS[from.getMonth()]} ${from.getDate()}`, kind: "week", from, to };
   }
   return undefined;
 }
