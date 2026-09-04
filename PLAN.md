@@ -13,7 +13,7 @@ parses it into a structured record with tags, the bot saves it and confirms.
 | Database     | SQLite via `better-sqlite3`     | Single file, zero setup, sync API, real SQL for future stats                             |
 | ORM          | None (raw SQL)                  | One table; minimize deps, abstract late                                                  |
 | LLM access   | OpenRouter, plain `fetch`       | One POST endpoint; thin client module doubles as a test seam                             |
-| LLM model    | `google/gemini-3.7-flash`       | Requested; configurable via env                                                          |
+| LLM model    | `google/gemini-3.8-flash`       | Requested; configurable via env                                                          |
 
 ## MVP scope
 
