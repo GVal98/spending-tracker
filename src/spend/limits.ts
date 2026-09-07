@@ -69,12 +69,37 @@ export function weeklyLimitAmount(limit: SpendLimit, weekStart: Date): number {
   return (limit.monthlyAmount * 7) / daysInMonth;
 }
 
+/** Cells in a limit bar; the bar is meant for a monospace block. */
+export const LIMIT_BAR_WIDTH = 20;
+
 /**
- * "12500 / 40000 (31%)", plus a warning marker once the limit is reached.
- * Callers prepend the limit label and period wording.
+ * "[██████|░░░░░░░░░░░░░░] 12500 / 40000", plus a warning marker once the
+ * limit is reached. `elapsedFraction` (0..1) is how much of the period has
+ * passed: the `|` pace marker sits there, so filling past it means spending
+ * ahead of a linear pace. Callers prepend the limit label / period wording.
  */
-export function formatLimitUsage(spent: number, limitAmount: number): string {
-  const percent = Math.round((spent / limitAmount) * 100);
+export function formatLimitUsage(
+  spent: number,
+  limitAmount: number,
+  elapsedFraction: number,
+): string {
   const warning = spent >= limitAmount ? " ⚠️" : "";
-  return `${roundAmount(spent)} / ${roundAmount(limitAmount)} (${percent}%)${warning}`;
+  return `${formatLimitBar(spent / limitAmount, elapsedFraction)} ${roundAmount(spent)} / ${roundAmount(limitAmount)}${warning}`;
+}
+
+/**
+ * Bar of `width` cells: `usedFraction` of them filled, capped at full, and a
+ * `|` marker inserted at `elapsedFraction`. Anything spent shows at least
+ * one cell so a fresh small spend is visible.
+ */
+export function formatLimitBar(
+  usedFraction: number,
+  elapsedFraction: number,
+  width = LIMIT_BAR_WIDTH,
+): string {
+  const rounded = Math.round(usedFraction * width);
+  const filled = Math.min(width, usedFraction > 0 ? Math.max(1, rounded) : 0);
+  const marker = Math.min(width, Math.max(0, Math.round(elapsedFraction * width)));
+  const cells = "█".repeat(filled) + "░".repeat(width - filled);
+  return `[${cells.slice(0, marker)}|${cells.slice(marker)}]`;
 }

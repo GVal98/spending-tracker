@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeStats,
   formatStatsMessage,
+  periodElapsedFraction,
   resolvePeriod,
   roundAmount,
 } from "./stats.js";
@@ -151,5 +152,26 @@ describe("roundAmount", () => {
     expect(roundAmount(0.30000000000000004)).toBe(0.3);
     expect(roundAmount(12)).toBe(12);
     expect(roundAmount(1.005)).toBeCloseTo(1, 1);
+  });
+});
+
+describe("periodElapsedFraction", () => {
+  const september = { from: new Date(2026, 8, 1), to: new Date(2026, 9, 1) };
+
+  it("counts_today_in_full", () => {
+    // 15th of a 30-day month, any time of day → half
+    expect(periodElapsedFraction(september, new Date(2026, 8, 15, 0, 1))).toBe(0.5);
+    expect(periodElapsedFraction(september, new Date(2026, 8, 15, 23, 59))).toBe(0.5);
+    expect(periodElapsedFraction(september, new Date(2026, 8, 1))).toBeCloseTo(1 / 30);
+  });
+
+  it("is_1_for_a_past_period_and_0_for_a_future_one", () => {
+    expect(periodElapsedFraction(september, new Date(2026, 9, 10))).toBe(1);
+    expect(periodElapsedFraction(september, new Date(2026, 7, 10))).toBe(0);
+  });
+
+  it("works_for_a_week", () => {
+    const week = { from: new Date(2026, 8, 14), to: new Date(2026, 8, 21) }; // Mon..Sun
+    expect(periodElapsedFraction(week, new Date(2026, 8, 16, 12))).toBeCloseTo(3 / 7); // Wednesday
   });
 });

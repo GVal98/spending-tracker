@@ -29,6 +29,7 @@ import {
 import {
   computeStats,
   formatStatsMessage,
+  periodElapsedFraction,
   resolvePeriod,
   roundAmount,
 } from "./spend/stats.js";
@@ -93,16 +94,19 @@ bot.command("stats", async (ctx) => {
   const statsMessage = formatStatsMessage(period.label, computeStats(spends));
   // For week periods the allowance is the monthly limit scaled to 7 days, so
   // both views track the same pace off a single configured number.
+  const elapsed = periodElapsedFraction(period, new Date());
+  const labelWidth = Math.max(...LIMITS.map((limit) => limit.label.length));
   const limitLines = LIMITS.map((limit) => {
     const limitAmount =
       period.kind === "week"
         ? weeklyLimitAmount(limit, period.from)
         : limit.monthlyAmount;
-    return `${limit.label}: ${formatLimitUsage(sumUnderLimit(limit, spends), limitAmount)}`;
+    const usage = formatLimitUsage(sumUnderLimit(limit, spends), limitAmount, elapsed);
+    return `${limit.label.padEnd(labelWidth)} ${usage}`;
   });
   const limitsBlock =
-    limitLines.length > 0 ? `\n\nЛимиты:\n${limitLines.join("\n")}` : "";
-  await ctx.reply(statsMessage + limitsBlock);
+    limitLines.length > 0 ? `\n\nЛимиты:\n${monospace(limitLines.join("\n"))}` : "";
+  await ctx.reply(escapeHtml(statsMessage) + limitsBlock, { parse_mode: "HTML" });
 });
 
 bot.on("message:text", async (ctx) => {
@@ -221,14 +225,11 @@ async function extractAndSave(
 }
 
 /**
- * After a save/update touching a limited tag: one message with the affected
- * limits' month + week usage. The week allowance is derived from the monthly
- * limit, so both lines track the same pace.
+ * After a save/update touching a limited tag: one monospace message with the
+ * affected limits' month + week bars. The week allowance is derived from the
+ * monthly limit, so both lines track the same pace.
  */
-async function replyLimitStatus(
-  ctx: { reply: (text: string) => Promise<unknown> },
-  tags: readonly Tag[],
-): Promise<void> {
+async function replyLimitStatus(ctx: ReplyContext, tags: readonly Tag[]): Promise<void> {
   const limits = limitsForTags(tags);
   if (limits.length === 0) {
     return;
@@ -247,12 +248,25 @@ async function replyLimitStatus(
     week.from.toISOString(),
     week.to.toISOString(),
   );
-  const lines = limits.map(
-    (limit) =>
-      `${limit.label}: за месяц ${formatLimitUsage(sumUnderLimit(limit, monthSpends), limit.monthlyAmount)}, ` +
-      `за неделю ${formatLimitUsage(sumUnderLimit(limit, weekSpends), weeklyLimitAmount(limit, week.from))}`,
+  const monthElapsed = periodElapsedFraction(month, now);
+  const weekElapsed = periodElapsedFraction(week, now);
+  const blocks = limits.map((limit) =>
+    [
+      limit.label,
+      `месяц  ${formatLimitUsage(sumUnderLimit(limit, monthSpends), limit.monthlyAmount, monthElapsed)}`,
+      `неделя ${formatLimitUsage(sumUnderLimit(limit, weekSpends), weeklyLimitAmount(limit, week.from), weekElapsed)}`,
+    ].join("\n"),
   );
-  await ctx.reply(lines.join("\n"));
+  await ctx.reply(monospace(blocks.join("\n\n")), { parse_mode: "HTML" });
+}
+
+/** Wraps text in a Telegram monospace block (HTML parse mode); bars only line up in monospace. */
+function monospace(text: string): string {
+  return `<pre>${escapeHtml(text)}</pre>`;
+}
+
+function escapeHtml(text: string): string {
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
@@ -279,7 +293,9 @@ async function downloadTelegramFile(ctx: Context): Promise<Buffer> {
   return bytes;
 }
 
-type ReplyContext = { reply: (text: string) => Promise<{ message_id: number }> };
+type ReplyContext = {
+  reply: (text: string, other?: { parse_mode: "HTML" }) => Promise<{ message_id: number }>;
+};
 
 const LLM_DOWN_REPLY = "Не смог связаться с сервисом разбора, попробуй ещё раз.";
 const POSITION_HINT = "Укажи номер позиции, например «2 удали» или «3 на самом деле 700».";

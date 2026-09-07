@@ -61,6 +61,18 @@ export function resolvePeriod(arg: string, now: Date): Period | undefined {
   return undefined;
 }
 
+/**
+ * Share of the period elapsed, 0..1, with today counted in full: on the 15th
+ * of a 30-day month it is 0.5. Clamped, so a past period is 1 and a future
+ * one 0.
+ */
+export function periodElapsedFraction(period: Pick<Period, "from" | "to">, now: Date): number {
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const fraction =
+    (endOfToday.getTime() - period.from.getTime()) / (period.to.getTime() - period.from.getTime());
+  return Math.min(1, Math.max(0, fraction));
+}
+
 export function computeStats(
   spends: readonly { amount: number; tags: readonly Tag[] }[],
 ): SpendStats {

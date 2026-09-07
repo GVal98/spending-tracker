@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatLimitBar,
   formatLimitUsage,
   limitsForTags,
   sumUnderLimit,
@@ -90,24 +91,60 @@ describe("weeklyLimitAmount", () => {
   });
 });
 
+describe("formatLimitBar", () => {
+  it("fills_used_share_and_places_the_pace_marker", () => {
+    // 6 of 20 cells used, marker after cell 10 (half the period elapsed)
+    expect(formatLimitBar(0.31, 0.5)).toBe("[██████░░░░|░░░░░░░░░░]");
+  });
+
+  it("shows_spending_ahead_of_pace_as_fill_past_the_marker", () => {
+    expect(formatLimitBar(0.75, 0.5)).toBe("[██████████|█████░░░░░]");
+  });
+
+  it("puts_the_marker_at_the_edges_for_a_fresh_or_finished_period", () => {
+    expect(formatLimitBar(0, 0)).toBe("[|░░░░░░░░░░░░░░░░░░░░]");
+    expect(formatLimitBar(0.5, 1)).toBe("[██████████░░░░░░░░░░|]");
+  });
+
+  it("caps_the_fill_at_full_when_over_the_limit", () => {
+    expect(formatLimitBar(1.4, 0.5)).toBe("[██████████|██████████]");
+  });
+
+  it("shows_at_least_one_cell_for_any_spend", () => {
+    expect(formatLimitBar(0.001, 0.5)).toBe("[█░░░░░░░░░|░░░░░░░░░░]");
+  });
+
+  it("respects_a_custom_width", () => {
+    expect(formatLimitBar(0.5, 0.25, 4)).toBe("[█|█░░]");
+  });
+});
+
 describe("formatLimitUsage", () => {
-  it("formats_spent_limit_and_percent", () => {
-    expect(formatLimitUsage(12_500, 40_000)).toBe("12500 / 40000 (31%)");
+  it("formats_bar_spent_and_limit", () => {
+    expect(formatLimitUsage(12_500, 40_000, 0.5)).toBe(
+      "[██████░░░░|░░░░░░░░░░] 12500 / 40000",
+    );
   });
 
   it("rounds_float_noise_and_fractional_allowances_for_display", () => {
     // 40000 * 7 / 30 = 9333.333...
-    expect(formatLimitUsage(0.30000000000000004, 9333.333333333334)).toBe(
-      "0.3 / 9333.33 (0%)",
+    expect(formatLimitUsage(0.30000000000000004, 9333.333333333334, 0)).toBe(
+      "[|█░░░░░░░░░░░░░░░░░░░] 0.3 / 9333.33",
     );
   });
 
   it("marks_a_reached_limit_with_a_warning", () => {
-    expect(formatLimitUsage(40_000, 40_000)).toBe("40000 / 40000 (100%) ⚠️");
-    expect(formatLimitUsage(42_000, 40_000)).toBe("42000 / 40000 (105%) ⚠️");
+    expect(formatLimitUsage(40_000, 40_000, 1)).toBe(
+      "[████████████████████|] 40000 / 40000 ⚠️",
+    );
+    expect(formatLimitUsage(42_000, 40_000, 1)).toBe(
+      "[████████████████████|] 42000 / 40000 ⚠️",
+    );
   });
 
   it("does_not_warn_just_below_the_limit", () => {
-    expect(formatLimitUsage(39_999, 40_000)).toBe("39999 / 40000 (100%)");
+    expect(formatLimitUsage(39_999, 40_000, 1)).toBe(
+      "[████████████████████|] 39999 / 40000",
+    );
   });
 });
