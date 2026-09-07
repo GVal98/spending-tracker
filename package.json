@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/bot.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke:item-edit": "tsx scripts/smoke-item-edit.ts"
   },
   "repository": {
     "type": "git",

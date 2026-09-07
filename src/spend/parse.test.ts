@@ -3,10 +3,14 @@ import {
   buildAudioExtractionPrompt,
   buildEditPrompt,
   buildExtractionPrompt,
+  buildItemEditPrompt,
   buildPhotoExtractionPrompt,
   isDeleteRequest,
+  parseItemEditResponse,
   parseLlmResponse,
   parseLlmResponseList,
+  splitPositionPrefix,
+  type NumberedSpend,
 } from "./parse.js";
 import { TAGS } from "./tags.js";
 
@@ -238,4 +242,112 @@ describe("isDeleteRequest", () => {
       expect(isDeleteRequest(text)).toBe(false);
     },
   );
+});
+
+const RECEIPT: NumberedSpend[] = [
+  { position: 1, spend: { amount: 350, description: "кофе", tags: ["restaurants"] } },
+  { position: 3, spend: { amount: 1200, description: "такси", tags: ["transport"] } },
+];
+
+describe("buildItemEditPrompt", () => {
+  it("lists_items_with_their_positions_correction_and_allowed_tags", () => {
+    const prompt = buildItemEditPrompt(RECEIPT, "удали такси");
+    expect(prompt).toContain('1. {"amount":350,"description":"кофе","tags":["restaurants"]}');
+    expect(prompt).toContain('3. {"amount":1200,"description":"такси","tags":["transport"]}');
+    expect(prompt).toContain("удали такси");
+    for (const tagDef of TAGS) {
+      expect(prompt).toContain(`- ${tagDef.id} (${tagDef.label}): ${tagDef.hint}`);
+    }
+  });
+});
+
+describe("parseItemEditResponse", () => {
+  const positions = [1, 3];
+
+  it("accepts_a_delete", () => {
+    expect(parseItemEditResponse('{"position": 3, "action": "delete"}', positions)).toEqual({
+      ok: true,
+      position: 3,
+      action: "delete",
+    });
+  });
+
+  it("accepts_an_update_with_validated_spend", () => {
+    const result = parseItemEditResponse(
+      '{"position": 1, "spend": {"amount": 400, "description": "кофе", "tags": ["restaurants", "bogus"]}}',
+      positions,
+    );
+    expect(result).toEqual({
+      ok: true,
+      position: 1,
+      action: "update",
+      spend: { amount: 400, description: "кофе", tags: ["restaurants"] },
+    });
+  });
+
+  it("reports_ambiguous_and_not_a_spend_markers", () => {
+    expect(parseItemEditResponse('{"error": "ambiguous"}', positions)).toMatchObject({
+      ok: false,
+      reason: "ambiguous",
+    });
+    expect(parseItemEditResponse('{"error": "not_a_spend"}', positions)).toMatchObject({
+      ok: false,
+      reason: "not_a_spend",
+    });
+  });
+
+  it("rejects_positions_that_do_not_exist", () => {
+    expect(parseItemEditResponse('{"position": 2, "action": "delete"}', positions)).toMatchObject({
+      ok: false,
+      reason: "invalid",
+    });
+    expect(parseItemEditResponse('{"position": "1", "action": "delete"}', positions)).toMatchObject({
+      ok: false,
+      reason: "invalid",
+    });
+  });
+
+  it("rejects_an_update_with_invalid_spend_or_missing_action", () => {
+    expect(
+      parseItemEditResponse('{"position": 1, "spend": {"amount": -1, "description": "x"}}', positions),
+    ).toMatchObject({ ok: false, reason: "invalid" });
+    expect(parseItemEditResponse('{"position": 1}', positions)).toMatchObject({
+      ok: false,
+      reason: "invalid",
+    });
+  });
+
+  it("rejects_non_json", () => {
+    expect(parseItemEditResponse("nope", positions)).toMatchObject({ ok: false, reason: "invalid" });
+  });
+});
+
+describe("splitPositionPrefix", () => {
+  it("splits_number_and_correction", () => {
+    expect(splitPositionPrefix("2 удали", 5)).toEqual({ position: 2, rest: "удали" });
+    expect(splitPositionPrefix("3. 700", 5)).toEqual({ position: 3, rest: "700" });
+    expect(splitPositionPrefix("3: на самом деле 700", 5)).toEqual({
+      position: 3,
+      rest: "на самом деле 700",
+    });
+    expect(splitPositionPrefix(" 1) тег транспорт ", 5)).toEqual({
+      position: 1,
+      rest: "тег транспорт",
+    });
+  });
+
+  it("treats_a_bare_number_as_no_prefix", () => {
+    expect(splitPositionPrefix("700", 5)).toBeNull();
+    expect(splitPositionPrefix("2", 5)).toBeNull();
+  });
+
+  it("ignores_numbers_outside_the_item_range", () => {
+    expect(splitPositionPrefix("1500 на кофе", 5)).toBeNull();
+    expect(splitPositionPrefix("0 удали", 5)).toBeNull();
+    expect(splitPositionPrefix("6 удали", 5)).toBeNull();
+  });
+
+  it("returns_null_when_text_does_not_start_with_a_number", () => {
+    expect(splitPositionPrefix("удали такси", 5)).toBeNull();
+  });
 });

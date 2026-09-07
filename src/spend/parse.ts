@@ -146,6 +146,124 @@ export function buildEditPrompt(existing: SpendDraft, correctionText: string): s
   ].join("\n");
 }
 
+/** A numbered line of a multi-item confirmation, as shown to the user. */
+export interface NumberedSpend {
+  position: number;
+  spend: SpendDraft;
+}
+
+/**
+ * Prompt for correcting one item of a multi-item confirmation (receipt) when
+ * the user did not name the item by number. The model must pick the item
+ * from the correction text and answer with the action for it.
+ */
+export function buildItemEditPrompt(
+  items: readonly NumberedSpend[],
+  correctionText: string,
+): string {
+  return [
+    "You update ONE item of an existing multi-item spending record (a receipt) based on a user's correction message.",
+    "",
+    ALLOWED_TAGS_BLOCK,
+    "",
+    "Existing items, numbered as the user sees them:",
+    ...items.map(
+      (item) =>
+        `${item.position}. ${JSON.stringify({
+          amount: item.spend.amount,
+          description: item.spend.description,
+          tags: item.spend.tags,
+        })}`,
+    ),
+    "",
+    "Respond with JSON only, no prose, no code fences. Exactly one of these shapes:",
+    '{"position": <item number>, "action": "delete"} — the correction asks to remove that item',
+    '{"position": <item number>, "spend": {"amount": <positive number>, "description": "<short description>", "tags": ["<tag>", ...]}} — the FULL updated item',
+    '{"error": "ambiguous"} — you cannot tell which single item the correction refers to (or it refers to several)',
+    '{"error": "not_a_spend"} — the correction is not a change to any item',
+    "",
+    "Rules:",
+    "- Pick the item by its number if the correction gives one (“второй”, “item 3”), otherwise by matching its description.",
+    "- Apply only the changes the correction asks for; keep every other field of that item unchanged.",
+    "- Never invent an item: the position must be one of the numbers listed above.",
+    "",
+    "Correction:",
+    correctionText,
+  ].join("\n");
+}
+
+export type ItemEditResult =
+  | { ok: true; position: number; action: "delete" }
+  | { ok: true; position: number; action: "update"; spend: SpendDraft }
+  | { ok: false; reason: "ambiguous" | "not_a_spend" | "invalid"; detail: string };
+
+/**
+ * Validates the model's answer to buildItemEditPrompt. `validPositions` are
+ * the item numbers that exist; a position outside them is model noise and
+ * rejected as invalid rather than acted upon.
+ */
+export function parseItemEditResponse(
+  raw: string,
+  validPositions: readonly number[],
+): ItemEditResult {
+  let data: unknown;
+  try {
+    data = JSON.parse(stripCodeFences(raw));
+  } catch {
+    return { ok: false, reason: "invalid", detail: `model returned non-JSON: ${truncate(raw)}` };
+  }
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return { ok: false, reason: "invalid", detail: `model returned non-object JSON: ${truncate(raw)}` };
+  }
+  const record = data as Record<string, unknown>;
+
+  if (record.error === "ambiguous") {
+    return { ok: false, reason: "ambiguous", detail: "model could not pick an item" };
+  }
+  if (record.error === "not_a_spend") {
+    return { ok: false, reason: "not_a_spend", detail: "correction is not a change to any item" };
+  }
+
+  const position = record.position;
+  if (typeof position !== "number" || !validPositions.includes(position)) {
+    return { ok: false, reason: "invalid", detail: `invalid position: ${JSON.stringify(position)}` };
+  }
+
+  if (record.action === "delete") {
+    return { ok: true, position, action: "delete" };
+  }
+  if (typeof record.spend !== "object" || record.spend === null || Array.isArray(record.spend)) {
+    return { ok: false, reason: "invalid", detail: `model returned unexpected shape: ${truncate(raw)}` };
+  }
+  const spendResult = validateSpendObject(record.spend as Record<string, unknown>);
+  if (!spendResult.ok) {
+    return { ok: false, reason: "invalid", detail: spendResult.reason };
+  }
+  return { ok: true, position, action: "update", spend: spendResult.spend };
+}
+
+/**
+ * Splits a leading item number off a correction to a multi-item message:
+ * "2 удали" → {position: 2, rest: "удали"}, "3. 700" → {position: 3, rest: "700"}.
+ * Only numbers within 1..itemCount count as positions, so "1500 на кофе" on
+ * a 5-item receipt stays a plain correction for the model to resolve.
+ * A bare number ("700") is never a position: there is no correction left.
+ */
+export function splitPositionPrefix(
+  text: string,
+  itemCount: number,
+): { position: number; rest: string } | null {
+  const match = /^\s*(\d{1,3})\s*[.:)\-]?\s+(\S.*)$/s.exec(text);
+  if (!match) {
+    return null;
+  }
+  const position = Number(match[1]);
+  if (position < 1 || position > itemCount) {
+    return null;
+  }
+  return { position, rest: match[2]!.trim() };
+}
+
 // English keywords kept alongside Russian: they cost nothing and old habits work.
 const DELETE_KEYWORDS = new Set(["delete", "del", "remove", "удали", "удалить", "убери"]);
 

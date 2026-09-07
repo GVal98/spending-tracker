@@ -9,10 +9,15 @@ import {
   buildAudioExtractionPrompt,
   buildEditPrompt,
   buildExtractionPrompt,
+  buildItemEditPrompt,
   buildPhotoExtractionPrompt,
   isDeleteRequest,
+  parseItemEditResponse,
   parseLlmResponse,
   parseLlmResponseList,
+  splitPositionPrefix,
+  type NumberedSpend,
+  type SpendDraft,
 } from "./spend/parse.js";
 import {
   formatLimitUsage,
@@ -28,7 +33,7 @@ import {
   roundAmount,
 } from "./spend/stats.js";
 import { ruPlural } from "./ruPlural.js";
-import { createSpendStore, type Spend } from "./spend/store.js";
+import { createSpendStore, type MessageItem, type Spend } from "./spend/store.js";
 import { tagLabel, type Tag } from "./spend/tags.js";
 
 const LIST_LIMIT = 10;
@@ -59,7 +64,8 @@ bot.command("start", async (ctx) => {
       "/stats — итоги месяца по тегам (/stats week, /stats prev).\n" +
       "Можно прислать фото чека или голосовое сообщение (подпись необязательна).\n" +
       "Чтобы изменить трату, ответь на подтверждение поправкой (например «на самом деле 7.50»), " +
-      "чтобы удалить — ответь «удали».",
+      "чтобы удалить — ответь «удали». Если в подтверждении несколько позиций, " +
+      "укажи номер («2 удали», «3 на самом деле 700») или назови позицию словами («удали такси»).",
   );
 });
 
@@ -69,7 +75,7 @@ bot.command("list", async (ctx) => {
     await ctx.reply("Трат пока нет.");
     return;
   }
-  await ctx.reply(spends.map(formatSpend).join("\n"));
+  await ctx.reply(spends.map(formatSpendWithDate).join("\n"));
 });
 
 bot.command("stats", async (ctx) => {
@@ -174,8 +180,8 @@ bot.on(["message:voice", "message:audio"], async (ctx) => {
 
 /**
  * Shared add flow for text and photo: LLM extract → validate → save → confirm.
- * A receipt photo may yield many spends; each gets its own confirmation
- * message so every item stays individually editable/deletable by reply.
+ * A receipt photo may yield many spends; they share one numbered confirmation
+ * message, and a reply addresses an item by its number (or by description).
  */
 async function extractAndSave(
   ctx: Context,
@@ -203,16 +209,11 @@ async function extractAndSave(
   console.log(
     `saved ${spends.length} spend(s): ${spends.map((s) => `#${s.id}`).join(", ")}`,
   );
-  if (spends.length > 1) {
-    const total = spends.reduce((sum, spend) => sum + spend.amount, 0);
-    const itemWord = ruPlural(spends.length, "позиция", "позиции", "позиций");
-    await ctx.reply(`Сохранено ${spends.length} ${itemWord}, итого ${roundAmount(total)}:`);
-  }
-  // Sequential on purpose: confirmations must arrive in receipt order.
-  for (const spend of spends) {
-    const confirmation = await ctx.reply(`Сохранено: ${formatSpend(spend)}`);
-    store.linkMessage(spend.id, confirmation.message_id);
-  }
+  const confirmation = await ctx.reply(formatSaveConfirmation(spends));
+  store.linkMessage(
+    confirmation.message_id,
+    spends.map((spend) => spend.id),
+  );
   await replyLimitStatus(
     ctx,
     spends.flatMap((spend) => spend.tags),
@@ -278,30 +279,64 @@ async function downloadTelegramFile(ctx: Context): Promise<Buffer> {
   return bytes;
 }
 
-/** Edit or delete flow: the user replied to one of our confirmation messages. */
+type ReplyContext = { reply: (text: string) => Promise<{ message_id: number }> };
+
+const LLM_DOWN_REPLY = "Не смог связаться с сервисом разбора, попробуй ещё раз.";
+const POSITION_HINT = "Укажи номер позиции, например «2 удали» или «3 на самом деле 700».";
+
+/**
+ * Edit or delete flow: the user replied to one of our confirmation messages.
+ * A single-item message is corrected directly. In a numbered (receipt)
+ * message the item comes from a leading number in the reply, otherwise the
+ * model picks it from the correction text.
+ */
 async function handleCorrection(
-  ctx: { reply: (text: string) => Promise<{ message_id: number }> },
+  ctx: ReplyContext,
   repliedToMessageId: number,
   text: string,
 ): Promise<void> {
-  const spend = store.findByMessageId(repliedToMessageId);
-  if (!spend) {
+  const items = store.findByMessageId(repliedToMessageId);
+  if (items.length === 0) {
     await ctx.reply(
       "Изменить или удалить трату можно, только ответив на моё сообщение «Сохранено:» или «Обновлено:».",
     );
     return;
   }
 
+  if (items.length === 1) {
+    const spend = items[0]!.spend;
+    if (!spend) {
+      await ctx.reply("Эта трата уже удалена.");
+      return;
+    }
+    await correctSpend(ctx, spend, text);
+    return;
+  }
+
+  const prefix = splitPositionPrefix(text, items.length);
+  if (prefix) {
+    const item = items.find((candidate) => candidate.position === prefix.position);
+    if (!item?.spend) {
+      await ctx.reply(`Позиция ${prefix.position} уже удалена.`);
+      return;
+    }
+    await correctSpend(ctx, item.spend, prefix.rest);
+    return;
+  }
+
+  await correctItemByDescription(ctx, items, text);
+}
+
+/** Correction aimed at one known spend: keyword delete, otherwise LLM edit. */
+async function correctSpend(ctx: ReplyContext, spend: Spend, text: string): Promise<void> {
   if (isDeleteRequest(text)) {
-    store.delete(spend.id);
-    console.log(`deleted spend #${spend.id}`);
-    await ctx.reply(`Удалено: ${formatSpend(spend)}`);
+    await deleteSpend(ctx, spend);
     return;
   }
 
   const llmResponse = await completeOrNull(buildEditPrompt(spend, text));
   if (llmResponse === null) {
-    await ctx.reply("Не смог связаться с сервисом разбора, попробуй ещё раз.");
+    await ctx.reply(LLM_DOWN_REPLY);
     return;
   }
 
@@ -313,11 +348,72 @@ async function handleCorrection(
     );
     return;
   }
+  await updateSpend(ctx, spend, result.spend, text);
+}
 
-  const updated = store.update(spend.id, result.spend, text);
+/** Correction to a numbered message without a number: the model picks the item. */
+async function correctItemByDescription(
+  ctx: ReplyContext,
+  items: readonly MessageItem[],
+  text: string,
+): Promise<void> {
+  const liveItems: NumberedSpend[] = [];
+  const liveSpends = new Map<number, Spend>();
+  for (const item of items) {
+    if (item.spend) {
+      liveItems.push({ position: item.position, spend: item.spend });
+      liveSpends.set(item.position, item.spend);
+    }
+  }
+  if (liveItems.length === 0) {
+    await ctx.reply("Все позиции этого сообщения уже удалены.");
+    return;
+  }
+
+  const llmResponse = await completeOrNull(buildItemEditPrompt(liveItems, text));
+  if (llmResponse === null) {
+    await ctx.reply(LLM_DOWN_REPLY);
+    return;
+  }
+
+  const result = parseItemEditResponse(llmResponse, [...liveSpends.keys()]);
+  if (!result.ok) {
+    console.warn(`item edit failed for "${text}": ${result.reason} (${result.detail})`);
+    await ctx.reply(
+      result.reason === "ambiguous"
+        ? `Не понял, о какой позиции речь. ${POSITION_HINT}`
+        : `Не смог разобрать поправку. ${POSITION_HINT}`,
+    );
+    return;
+  }
+
+  const spend = liveSpends.get(result.position);
+  if (!spend) {
+    throw new Error(`unreachable: model position ${result.position} passed validation but has no spend`);
+  }
+  if (result.action === "delete") {
+    await deleteSpend(ctx, spend);
+    return;
+  }
+  await updateSpend(ctx, spend, result.spend, text);
+}
+
+async function deleteSpend(ctx: ReplyContext, spend: Spend): Promise<void> {
+  store.delete(spend.id);
+  console.log(`deleted spend #${spend.id}`);
+  await ctx.reply(`Удалено: ${formatSpend(spend)}`);
+}
+
+async function updateSpend(
+  ctx: ReplyContext,
+  spend: Spend,
+  draft: SpendDraft,
+  rawText: string,
+): Promise<void> {
+  const updated = store.update(spend.id, draft, rawText);
   console.log(`updated spend #${updated.id}: ${updated.amount} ${updated.description}`);
   const confirmation = await ctx.reply(`Обновлено: ${formatSpend(updated)}`);
-  store.linkMessage(updated.id, confirmation.message_id);
+  store.linkMessage(confirmation.message_id, [updated.id]);
   // Old + new tags: an edit that moves a spend out of a limit changes that
   // limit's usage too, so both sides get reported.
   await replyLimitStatus(ctx, [...spend.tags, ...updated.tags]);
@@ -336,9 +432,28 @@ async function completeOrNull(
   }
 }
 
+/**
+ * Save confirmation: one line for a single spend, a numbered list (the
+ * numbers are what replies refer to) plus a total for several.
+ */
+function formatSaveConfirmation(spends: readonly Spend[]): string {
+  if (spends.length === 1) {
+    return `Сохранено: ${formatSpend(spends[0]!)}`;
+  }
+  const total = spends.reduce((sum, spend) => sum + spend.amount, 0);
+  const itemWord = ruPlural(spends.length, "позиция", "позиции", "позиций");
+  const lines = spends.map((spend, index) => `${index + 1}. ${formatSpend(spend)}`);
+  return [`Сохранено ${spends.length} ${itemWord}, итого ${roundAmount(total)}:`, ...lines].join("\n");
+}
+
+/** Confirmation format: no date, Telegram already shows the message date. */
 function formatSpend(spend: Spend): string {
-  const date = spend.createdAt.slice(0, 10);
-  return `${spend.amount} — ${spend.description} [${spend.tags.map(tagLabel).join(", ")}] ${date}`;
+  return `${spend.amount} — ${spend.description} [${spend.tags.map(tagLabel).join(", ")}]`;
+}
+
+/** /list format: date included, since the list reply has no per-spend date. */
+function formatSpendWithDate(spend: Spend): string {
+  return `${formatSpend(spend)} ${spend.createdAt.slice(0, 10)}`;
 }
 bot.catch((error) => {
   console.error("bot error:", error);
