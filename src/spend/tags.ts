@@ -21,7 +21,7 @@ export const TAGS = [
   {
     id: "transport",
     label: "Транспорт",
-    hint: "getting around town: metro, bus, taxi, car sharing, fuel, parking",
+    hint: "getting around: metro, bus, car sharing, fuel, parking, and any taxi, including airport rides on a trip",
   },
   {
     id: "household",
@@ -31,17 +31,17 @@ export const TAGS = [
   {
     id: "prepared_food",
     label: "Готовая еда",
-    hint: "ready-to-eat food eaten at home: cooked dishes from a store, food delivery orders. NOT eating out (restaurants), NOT raw ingredients (groceries)",
+    hint: "ready-to-eat food eaten at home: cooked dishes from a store, savoury pies, food delivery orders. NOT eating out (restaurants), NOT raw ingredients (groceries), NOT bakery or sweets (groceries)",
   },
   {
     id: "groceries",
     label: "Продукты",
-    hint: "food ingredients and basic groceries from a store or market",
+    hint: "food ingredients and basic groceries from a store or market, including store-bought bakery and sweets: buns, sochni, pastries, muffins, donuts",
   },
   {
     id: "restaurants",
     label: "Рестораны и фастфуд",
-    hint: "eating and drinking out: restaurants, cafes, bars, coffee shops, fast food",
+    hint: "eating and drinking out: restaurants, cafes, bars, coffee shops, fast food. Tips above 100 RUB with no stated recipient go here",
   },
   {
     id: "health",
@@ -61,17 +61,17 @@ export const TAGS = [
   {
     id: "dev_project",
     label: "Разработка и проект",
-    hint: "the user's own projects and development: hosting, domains, API credits, dev tools and services",
+    hint: "the user's own projects and development: hosting, domains, API credits, dev tools and services, AI assistant subscriptions such as Claude",
   },
   {
     id: "other_subscriptions",
     label: "Другие подписки",
-    hint: "recurring subscriptions not covered by telecom or dev_project: streaming, music, apps, cloud storage",
+    hint: "recurring subscriptions not covered by telecom or dev_project: streaming, music, apps, cloud storage. NOT Claude (dev_project)",
   },
   {
     id: "delivery_fees",
     label: "Доставка и сборы",
-    hint: "delivery charges, service fees, commissions, courier tips. The delivered goods themselves go under their own tag",
+    hint: "delivery charges, service fees, commissions, courier tips up to 100 RUB. A larger tip is restaurants. The delivered goods themselves go under their own tag",
   },
   {
     id: "clothes",
@@ -81,7 +81,7 @@ export const TAGS = [
   {
     id: "travel",
     label: "Путешествия",
-    hint: "trips: flights, trains, hotels, visas, spending while travelling",
+    hint: "trips: flights, trains, hotels, visas, spending while travelling. NOT taxis, even to or from an airport (transport only)",
   },
   {
     id: "other",
